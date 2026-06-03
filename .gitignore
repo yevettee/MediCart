@@ -1,0 +1,15 @@
+# ROS2 colcon workspace artifacts
+medicart_ws/build/
+medicart_ws/install/
+medicart_ws/log/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Code Editors
+.claude/
+.cursor/
+.vscode/
+
