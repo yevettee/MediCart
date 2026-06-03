@@ -1,0 +1,7 @@
+string patient_id
+---
+bool success
+PatientInfo patient
+MedicineInfo[] medicines
+int32 total_steps
+string message

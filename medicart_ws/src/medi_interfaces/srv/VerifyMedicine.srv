@@ -1,0 +1,9 @@
+string patient_id
+int32 step_index
+string scanned_text
+---
+bool success
+bool match
+MedicineInfo expected
+MedicineInfo scanned
+string message
