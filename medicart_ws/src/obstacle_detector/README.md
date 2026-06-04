@@ -1,3 +1,3 @@
 # obstacle_detector
 
-Converts OAK-D depth images to filtered PointCloud2 for Nav2 vision obstacle layer.
+Pure-vision depth inference from OAK-D RGB → filtered PointCloud2 for the Nav2 vision obstacle layer. The specific depth model is not yet finalized.

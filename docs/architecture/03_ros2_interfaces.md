@@ -15,14 +15,12 @@
 | Create3 | — | `/robot6/undock`, `/robot6/dock` |
 | `dashboard` | `/robot6/emergency_stop` | `/robot6/robot_state`; calls `/robot6/start_tracking`, `/robot6/move_home`, `/robot6/scan_*`, `/robot6/cancel_mission` |
 | `mission_manager` | `/robot6/robot_state` | `/robot6/target_pose`, `/robot6/emergency_stop`; serves dashboard srv; clients Nav2/Create3/tracker/db/scanner |
-| `nurse_tracker`* | `/robot6/target_pose`, `/robot6/target_bbox` | `/robot6/oakd/*`, `/robot6/tracker/reset`, `/tf` |
-| `obstacle_detector` | `/robot6/vision_obstacles` | `/robot6/oakd/depth_image`, `/robot6/oakd/camera_info` |
+| `nurse_tracker` | `/robot6/target_pose`, `/robot6/target_bbox` | `/robot6/oakd/*`, `/robot6/tracker/reset`, `/tf` |
+| `obstacle_detector` | `/robot6/vision_obstacles` | `/robot6/oakd/image_raw` (+`camera_info`); pure-vision depth, 미확정 |
 | `ocr_detector` | `/robot6/ocr/get_result` | `/robot6/oakd/image_raw` |
 | `scanner` | `/robot6/scanner/verify_medicine` | `/robot6/ocr/get_result`, `/robot6/db/verify_medicine` |
 | `db_bridge` | `/robot6/db/get_prescription`, `/robot6/db/verify_medicine` | — |
 | `medi_interfaces` | *(타입만)* msg/srv `.msg`/`.srv` | — |
-
-\* `nurse_tracker_ocl` 동일 topic/service 이름.
 
 ```mermaid
 flowchart LR

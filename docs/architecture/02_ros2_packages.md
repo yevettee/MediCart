@@ -14,7 +14,6 @@ flowchart LR
     end
     subgraph perception [Perception]
         nt[nurse_tracker]
-        ntocl[nurse_tracker_ocl]
         od[obstacle_detector]
         ocr[ocr_detector]
     end
@@ -48,9 +47,8 @@ flowchart LR
 | --- | --- | --- |
 | `dashboard` | 1 | `dashboard_node`, `gui_panel` |
 | `mission_manager` | 1 | `mission_manager_node`, `state_machine`, `prescription_session` |
-| `nurse_tracker` | 1 | `tracker_node`, YOLO/tracking/spatial |
-| `nurse_tracker_ocl` | 2 | `ocl_tracker_node` (동일 출력 I/F) |
-| `obstacle_detector` | 1 | `obstacle_node`, `height_filter` |
+| `nurse_tracker` | 1 | `tracker_node`, OCL detection/tracking + feature memory·ReID/spatial |
+| `obstacle_detector` | 1 | `depth_node`, pure-vision depth 추론 (모델 미확정) |
 | `ocr_detector` | 1 | `ocr_node`, `ocr_engine` |
 | `scanner` | 1 | `scanner_node`, `medicine_matcher` |
 | `db_bridge` | 1 | `db_node`, `firebase_client` |
@@ -58,7 +56,7 @@ flowchart LR
 | `medi_interfaces` | 1 | msg/srv only |
 | `simulation` | — | Gazebo |
 
-`perception.launch.py` 인자 `tracker:=nurse` \| `ocl` — downstream 토픽/서비스 이름 동일.
+`nurse_tracker`는 scope 분리 없이 처음부터 OCL 기반으로 구현한다 (feature memory·ReID 포함).
 
 ---
 
@@ -96,9 +94,9 @@ flowchart LR
 
 ---
 
-## nurse_tracker / nurse_tracker_ocl
+## nurse_tracker
 
-**역할**: RGB+depth로 간호사 1명 추적 → map frame `/robot6/target_pose`·`/robot6/target_bbox` 발행.
+**역할**: RGB+depth로 간호사 1명 추적 → map frame `/robot6/target_pose`·`/robot6/target_bbox` 발행. OCL 기반 detection/tracking에 feature memory·ReID를 결합한다 (scope 분리 없이 처음부터 OCL).
 
 | 방향 | 데이터 | 비고 |
 | --- | --- | --- |
@@ -129,21 +127,24 @@ ROS param: `target_class=person`, `follow_distance=1.0` (m). reset 직후 1명 l
 
 ## obstacle_detector
 
-**역할**: depth → 높이 필터 PointCloud2 → Nav2 costmap.
+**역할**: pure-vision으로 depth를 추론 → 장애물 PointCloud2 → Nav2 costmap. scope 분리 없이 단일 모델로 구현한다.
+
+> ⚠️ 구체 모델은 **미확정**. RGB 단일 입력에서 depth를 추론하는 monocular depth 계열을 가정하되, 최종 모델·입력 구성은 변경될 수 있다. depth_image 입력 기반 fallback도 가능.
 
 | 방향 | 데이터 | 비고 |
 | --- | --- | --- |
-| IN | `/robot6/oakd/depth_image`, `/robot6/oakd/camera_info` | |
+| IN | `/robot6/oakd/image_raw` (+ `/robot6/oakd/camera_info`) | pure-vision depth 추론 입력 (미확정) |
 | OUT | `/robot6/vision_obstacles` | `PointCloud2`; Nav2 ObstacleLayer yaml 구독 |
 
 ```mermaid
 flowchart TD
-    depth["/robot6/oakd/depth_image 16UC1"]
-    pc["point_cloud_xyz → /robot6/oakd/depth/points"]
+    rgb["/robot6/oakd/image_raw"]
+    depthmodel["pure-vision depth 추론 (모델 미확정)"]
+    pc["depth → PointCloud2"]
     hf["height_filter z 0.1-1.5m"]
     out["/robot6/vision_obstacles"]
     nav["Nav2 costmap"]
-    depth --> pc --> hf --> out --> nav
+    rgb --> depthmodel --> pc --> hf --> out --> nav
 ```
 
 ---

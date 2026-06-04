@@ -8,8 +8,8 @@
 | --- | --- | --- | --- |
 | `dashboard` | 운영자 UI·미션 명령 | `/robot6/robot_state` | `/robot6/start_tracking`, `/robot6/scan_*`, `/robot6/move_home`, `/robot6/emergency_stop` |
 | `mission_manager` | 상태기·처방 세션·Nav2/도킹 조율 | `/robot6/target_pose`, `/robot6/emergency_stop`, 서비스 요청 | `/robot6/robot_state`, `/robot6/navigate_to_pose`, `/robot6/undock`, `/robot6/dock` |
-| `nurse_tracker` / `nurse_tracker_ocl` | 간호사 추적 (호스트 추론) | `/robot6/oakd/image_raw`, `/robot6/oakd/depth_image`, `/tf` | `/robot6/target_pose`, `/robot6/target_bbox` |
-| `obstacle_detector` | depth → 장애물 point cloud | `/robot6/oakd/depth_image`, `/robot6/oakd/camera_info` | `/robot6/vision_obstacles` |
+| `nurse_tracker` | 간호사 추적 (호스트 추론, OCL+ReID) | `/robot6/oakd/image_raw`, `/robot6/oakd/depth_image`, `/tf` | `/robot6/target_pose`, `/robot6/target_bbox` |
+| `obstacle_detector` | pure-vision depth 추론 → 장애물 point cloud (모델 미확정) | `/robot6/oakd/image_raw` | `/robot6/vision_obstacles` |
 | `ocr_detector` | 약품 라벨 OCR | `/robot6/oakd/image_raw` | `/robot6/ocr/get_result` (service) |
 | `scanner` | OCR+처방 step 검증 | `/robot6/scanner/verify_medicine` | `/robot6/ocr/get_result`, `/robot6/db/verify_medicine` |
 | `db_bridge` | Firestore 처방·검증 | `/robot6/db/get_prescription`, `/robot6/db/verify_medicine` | patient/medicines |
@@ -53,7 +53,7 @@ flowchart TB
         ocr["ocr_detector"]
         lidar["LiDAR /robot6/scan"]
         oakd -->|/robot6/oakd/image_raw depth_image| nt
-        oakd -->|/robot6/oakd/depth_image| od
+        oakd -->|/robot6/oakd/image_raw| od
         oakd -->|/robot6/oakd/image_raw| ocr
     end
 
@@ -85,7 +85,7 @@ flowchart TB
 ```
 
 - **Command**: dashboard만 operator-facing service 발행 (`/robot6/start_tracking`, `/robot6/scan_*`, `/robot6/move_home`, `/robot6/cancel_mission`); Nav2/action은 mission_manager만 호출.
-- **Perception**: OAK-D는 VPU 추론 없이 raw만 Pi→호스트. 추론은 `nurse_tracker`, `obstacle_detector`, `ocr_detector`.
+- **Perception**: OAK-D는 VPU 추론 없이 raw만 Pi→호스트. 추론은 `nurse_tracker`(OCL+ReID), `obstacle_detector`(pure-vision depth, 모델 미확정), `ocr_detector`.
 - **Navigation**: `/robot6/cmd_vel` 단일 소스(Nav2). emergency 시 mission_manager가 `Twist(0)` 직접 발행.
 - **Data**: `db_bridge`는 수직 독립; `scanner`·`mission_manager`가 처방 조회·검증에 사용.
 
@@ -126,7 +126,7 @@ sequenceDiagram
 
     loop every frame
         Cam->>N: /robot6/oakd/image_raw depth_image
-        Cam->>O: /robot6/oakd/depth_image
+        Cam->>O: /robot6/oakd/image_raw
         N->>M: /robot6/target_pose
         O->>Nav: /robot6/vision_obstacles
     end
