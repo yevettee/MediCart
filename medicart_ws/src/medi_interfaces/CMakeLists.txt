@@ -16,6 +16,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TargetBBox.msg"
   "msg/MedicineInfo.msg"
   "msg/PatientInfo.msg"
+  "msg/PatientIdentified.msg"
   "srv/StartTracking.srv"
   "srv/ScanPatient.srv"
   "srv/ScanMedicine.srv"
@@ -23,6 +24,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GetPrescription.srv"
   "srv/VerifyMedicine.srv"
   "srv/MoveHome.srv"
+  "srv/StartPatrol.srv"
   DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
 )
 

@@ -13,8 +13,9 @@
 | `turtlebot4_node` | `/robot6/odom`, `/tf` | `/robot6/cmd_vel` |
 | Nav2 | `/robot6/cmd_vel`, `/robot6/map` | `/robot6/scan`, `/robot6/vision_obstacles`; `/robot6/navigate_to_pose` |
 | Create3 | — | `/robot6/undock`, `/robot6/dock` |
-| `dashboard` | `/robot6/emergency_stop` | `/robot6/robot_state`; calls `/robot6/start_tracking`, `/robot6/move_home`, `/robot6/scan_*`, `/robot6/cancel_mission` |
-| `mission_manager` | `/robot6/robot_state` | `/robot6/target_pose`, `/robot6/emergency_stop`; serves dashboard srv; clients Nav2/Create3/tracker/db/scanner |
+| `dashboard` | `/robot6/emergency_stop` | `/robot6/robot_state`, `/robot6/patient_identified`; calls `/robot6/start_patrol`, `/robot6/start_tracking`, `/robot6/move_home`, `/robot6/scan_*`, `/robot6/cancel_mission` |
+| `mission_manager` | `/robot6/robot_state`; serves `/robot6/start_patrol` + dashboard srv | `/robot6/target_pose`, `/robot6/patient_identified`, `/robot6/emergency_stop`; clients Nav2/Create3/tracker/db/scanner |
+| `patient_identifier` | `/robot6/patient_identified` | `/robot6/oakd/image_raw`, `/robot6/oakd/depth_image`; calls `/robot6/db/get_prescription` |
 | `nurse_tracker` | `/robot6/target_pose`, `/robot6/target_bbox` | `/robot6/oakd/*`, `/robot6/tracker/reset`, `/tf` |
 | `obstacle_detector` | `/robot6/vision_obstacles` | `/robot6/oakd/image_raw` (+`camera_info`); pure-vision depth, 미확정 |
 | `ocr_detector` | `/robot6/ocr/get_result` | `/robot6/oakd/image_raw` |
@@ -31,6 +32,7 @@ flowchart LR
         nav[Nav2]
     end
     subgraph medi [MediCart nodes]
+        pi[patient_identifier]
         nt[nurse_tracker]
         od[obstacle_detector]
         ocr[ocr_detector]
@@ -39,11 +41,15 @@ flowchart LR
         sc[scanner]
         db[db_bridge]
     end
+    oak --> pi
     oak --> nt
     oak --> od
     oak --> ocr
     lidar --> nav
     od --> nav
+    pi --> mm
+    pi --> dash
+    pi --> db
     nt --> mm
     dash --> mm
     mm --> nav
@@ -122,8 +128,8 @@ Costmap: `/robot6/scan` + `/robot6/vision_obstacles` — ObstacleLayer yaml.
 
 ```
 medi_interfaces/
-├── msg/  RobotState, MedicineInfo, PatientInfo, TargetBBox
-└── srv/  StartTracking, MoveHome, ScanPatient, ScanMedicine,
+├── msg/  RobotState, MedicineInfo, PatientInfo, TargetBBox, PatientIdentified
+└── srv/  StartTracking, StartPatrol, MoveHome, ScanPatient, ScanMedicine,
           GetOcrResult, GetPrescription, VerifyMedicine
 ```
 
@@ -139,6 +145,7 @@ medi_interfaces/
 | `/tf` | `tf2_msgs/TFMessage` | turtlebot4_node, Nav2 | 전체 |
 | `/robot6/target_pose` | `geometry_msgs/PoseStamped` | nurse_tracker | mission_manager |
 | `/robot6/target_bbox` | `medi_interfaces/TargetBBox` | nurse_tracker | dashboard |
+| `/robot6/patient_identified` | `medi_interfaces/PatientIdentified` | patient_identifier | mission_manager, dashboard |
 | `/robot6/vision_obstacles` | `sensor_msgs/PointCloud2` | obstacle_detector | Nav2 costmap |
 | `/robot6/cmd_vel` | `geometry_msgs/Twist` | Nav2 | TurtleBot4 |
 | `/robot6/emergency_stop` | `std_msgs/Bool` | dashboard | mission_manager |
@@ -149,6 +156,7 @@ medi_interfaces/
 
 | Service | 타입 | Server | Client |
 | --- | --- | --- | --- |
+| `/robot6/start_patrol` | `StartPatrol` | mission_manager | dashboard |
 | `/robot6/start_tracking` | `StartTracking` | mission_manager | dashboard |
 | `/robot6/move_home` | `MoveHome` | mission_manager | dashboard |
 | `/robot6/scan_patient` | `ScanPatient` | mission_manager | dashboard |
@@ -188,12 +196,27 @@ geometry_msgs/Point spatial_coordinates
 
 ```
 std_msgs/Header header
-string state          # IDLE, UNDOCK, FOLLOW, SCAN, RETURN, DOCK, ERROR
+string state          # IDLE, UNDOCK, PATROL, IDENTIFY, INTERVIEW, NEXT_ROOM,
+                      # FOLLOW, SCAN, RETURN, DOCK, ERROR
 float32 battery
 int32 error_code
 string error_message
 string detail_json
 ```
+
+### PatientIdentified.msg
+
+```
+std_msgs/Header header
+string patient_id
+string patient_name
+string room
+bool is_present
+bool is_identified
+string status         # identified / absent / mismatch / no_qr / db_error
+```
+
+`patient_identifier`(A)가 발행. `status`로 모든 결과(재실·신원·검증·오류)를 표현하며 별도 알림 토픽은 두지 않는다.
 
 > **Note:** 장애물은 `obstacle_detector`가 `/robot6/vision_obstacles` (`sensor_msgs/PointCloud2`)로 발행해 Nav2 costmap이 직접 구독한다. 별도 `medi_interfaces` 장애물 타입은 정의하지 않는다.
 
@@ -221,6 +244,15 @@ string room
 ## medi_interfaces — Service 정의
 
 ### StartTracking.srv
+
+```yaml
+# Request (empty)
+---
+bool success
+string message
+```
+
+### StartPatrol.srv
 
 ```yaml
 # Request (empty)
