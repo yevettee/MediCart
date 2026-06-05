@@ -14,8 +14,6 @@ find_package(builtin_interfaces REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RobotState.msg"
   "msg/TargetBBox.msg"
-  "msg/Obstacle.msg"
-  "msg/ObstacleArray.msg"
   "msg/MedicineInfo.msg"
   "msg/PatientInfo.msg"
   "srv/StartTracking.srv"

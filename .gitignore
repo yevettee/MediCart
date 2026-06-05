@@ -16,3 +16,6 @@ __pycache__/
 # Obsidian
 docs/.obsidian/
 
+# Understand Anything (knowledge graph artifacts)
+.understand-anything/
+

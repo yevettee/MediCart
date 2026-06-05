@@ -122,7 +122,7 @@ Costmap: `/robot6/scan` + `/robot6/vision_obstacles` — ObstacleLayer yaml.
 
 ```
 medi_interfaces/
-├── msg/  RobotState, Obstacle, ObstacleArray, MedicineInfo, PatientInfo, TargetBBox
+├── msg/  RobotState, MedicineInfo, PatientInfo, TargetBBox
 └── srv/  StartTracking, MoveHome, ScanPatient, ScanMedicine,
           GetOcrResult, GetPrescription, VerifyMedicine
 ```
@@ -195,21 +195,7 @@ string error_message
 string detail_json
 ```
 
-### Obstacle.msg / ObstacleArray.msg
-
-```
-# Obstacle.msg
-std_msgs/Header header
-float32[4] bbox
-float32 depth
-float32 confidence
-string label
-geometry_msgs/Point position
-
-# ObstacleArray.msg
-std_msgs/Header header
-Obstacle[] obstacles
-```
+> **Note:** 장애물은 `obstacle_detector`가 `/robot6/vision_obstacles` (`sensor_msgs/PointCloud2`)로 발행해 Nav2 costmap이 직접 구독한다. 별도 `medi_interfaces` 장애물 타입은 정의하지 않는다.
 
 ### MedicineInfo.msg / PatientInfo.msg
 
