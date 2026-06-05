@@ -94,6 +94,8 @@ flowchart TB
 
 ## 1. Runtime Topology
 
+```어느 pc/robot에 어떤 노드가 뜨는지 보는 배치도 
+
 ```mermaid
 flowchart TB
     subgraph OPS["Operator / Host PC"]
@@ -161,6 +163,8 @@ flowchart TB
 | Command source | Dashboard가 operator-facing service를 호출하고, Nav2 action은 mission_manager만 호출 |
 
 ## 2. Process and Node Construction
+
+어떤 main()에서 어떤 Node class가 만들어지는지 보는 표
 
 ROS2 Python 패키지는 `setup.py`의 `console_scripts` entry point가 실행되고, 각 entry point의 `main()` 함수가 `rclpy.init()` 후 Node class를 생성한다.
 
