@@ -89,3 +89,11 @@ export async function saveIntake(payload: Record<string, unknown>) {
   });
   return r.json();
 }
+
+export async function ocr(blob: Blob): Promise<{ text: string }> {
+  const fd = new FormData();
+  fd.append("image", blob, "capture.png");
+  const r = await fetch(`${API_BASE}/api/ocr`, { method: "POST", credentials: "include", body: fd });
+  if (!r.ok) throw new Error(`/api/ocr → ${r.status}`);
+  return r.json();
+}

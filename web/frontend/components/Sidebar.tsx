@@ -7,6 +7,7 @@ const NAV = [
   { href: "/map", label: "실시간 관제", sub: "AMR 위치·모드", icon: MapIcon },
   { href: "/patients", label: "환자 정보", sub: "회진 보조", icon: PatientIcon },
   { href: "/intake", label: "문진표", sub: "작성·저장", icon: FormIcon },
+  { href: "/ocr", label: "약품 OCR", sub: "텍스트 인식", icon: FormIcon },
   { href: "/debug", label: "디버그", sub: "PC1·PC2 DB", icon: DebugIcon },
 ];
 
