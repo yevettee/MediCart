@@ -13,6 +13,7 @@ from flask_cors import CORS
 
 import patients
 import fb_read
+import ocr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 등록번호 형식 검증 — 키 주입·IDOR 방지 (P-YYYY-NNNN)
@@ -29,7 +30,7 @@ COOKIE_SECURE  = os.environ.get("COOKIE_SECURE", "0") == "1"   # https(터널)�
 _OPEN_PATHS    = {"/api/health", "/api/login", "/api/me"}      # 인증 없이 허용
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 256 * 1024   # 문진표 본문 상한 256KB
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024   # 이미지 업로드 허용(OCR)
 # CORS: 프론트 오리진만 허용 + 쿠키 자격증명(로그인 쿠키). 와일드카드 금지.
 CORS(app, resources={r"/api/*": {"origins": [_FRONTEND_ORIGIN]}}, supports_credentials=True)
 
@@ -135,6 +136,23 @@ def intake():
         return jsonify({"error": "invalid or unknown patientId"}), 400
     fb_read.save_intake(pid, body)
     return jsonify({"ok": True, "patientId": pid})
+
+
+# ── OCR ─────────────────────────────────────────────────────────────────────
+@app.post("/api/ocr")
+def api_ocr():
+    f = request.files.get("image")
+    if f is None:
+        return jsonify({"error": "no image"}), 400
+    data = f.read()
+    if not data:
+        return jsonify({"error": "empty image"}), 400
+    text = ocr.recognized_text(data)
+    try:
+        fb_read.set_ocr(text)
+    except Exception:
+        pass   # OCR 표시는 유지, RTDB 기록 실패는 비치명
+    return jsonify({"text": text})
 
 
 # ── 병실→pose + 맵 ───────────────────────────────────────────────────────────
