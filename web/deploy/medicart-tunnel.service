@@ -1,0 +1,12 @@
+[Unit]
+Description=cloudflared tunnel — intel.thatshoon.com (MediCart)
+After=network.target medicart-backend.service medicart-frontend.service
+
+[Service]
+User=rokey
+ExecStart=/usr/bin/cloudflared --no-autoupdate --config /home/rokey/.cloudflared/config.yml tunnel run intel
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

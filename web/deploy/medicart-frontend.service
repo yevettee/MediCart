@@ -1,0 +1,16 @@
+[Unit]
+Description=MediCart web Next.js frontend (:3000)
+After=network.target
+
+[Service]
+User=rokey
+WorkingDirectory=/home/rokey/MediCart/web/frontend
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=INTEL_AUTH_TOKEN=intel-demo-token-2026
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
