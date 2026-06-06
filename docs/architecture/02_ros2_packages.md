@@ -51,7 +51,7 @@ flowchart LR
 | `dashboard` | 1 | A·B | `dashboard_node`, `gui_panel` |
 | `mission_manager` | 1 | A·B | `mission_manager_node`, `state_machine`, `prescription_session` |
 | `patient_identifier` | 1 | A | `identifier_node`, `person_detector`, `qr_scanner`, `patient_validator` |
-| `nurse_tracker` | 1 | B | `tracker_node`, OCL detection/tracking + feature memory·ReID/spatial |
+| `nurse_tracker` | 1 | B 챌린지 | `tracker_node`, OCL detection/tracking + feature memory·ReID/spatial |
 | `obstacle_detector` | 1 | A·B | `obstacle_node`, `height_filter`, pure-vision depth 추론 (모델 미확정) |
 | `ocr_detector` | 1 | B | `ocr_node`, `ocr_engine` |
 | `scanner` | 1 | B | `scanner_node`, `medicine_matcher` |
@@ -88,8 +88,9 @@ flowchart LR
 
 | 방향 | 데이터 | 시나리오 | 비고 |
 | --- | --- | --- | --- |
-| OUT | `/robot6/start_patrol` | A | mission_manager 클라이언트 |
-| OUT | `/robot6/start_tracking`, `/robot6/move_home`, `/robot6/scan_patient`, `/robot6/scan_medicine` | B | `medi_interfaces` srv; mission_manager 클라이언트 |
+| OUT | `/robot6/start_patrol` | A | 순찰 모드 선택; mission_manager 클라이언트 |
+| OUT | `/robot6/start_medication`, `/robot6/move_home`, `/robot6/scan_patient`, `/robot6/scan_medicine` | B | 투약 모드 선택(자율주행 기본); `medi_interfaces` srv |
+| OUT | `/robot6/start_tracking` | B 챌린지 | 간호사 추종 활성화 |
 | OUT | `/robot6/cancel_mission` (`std_srvs/Trigger`) | A·B | |
 | OUT | `/robot6/emergency_stop` (`std_msgs/Bool`) | A·B | |
 | IN | `/robot6/robot_state` | A·B | UI 갱신 |
@@ -108,25 +109,30 @@ flowchart LR
 
 | 방향 | 데이터 | 시나리오 | 비고 |
 | --- | --- | --- | --- |
-| IN | `/robot6/start_patrol` | A | dashboard |
-| IN | `/robot6/start_tracking`, `/robot6/move_home`, `/robot6/scan_patient`, `/robot6/scan_medicine`, `/robot6/cancel_mission` | B | dashboard |
+| IN | `/robot6/start_patrol` | A | dashboard (순찰 모드 선택) |
+| IN | `/robot6/start_medication`, `/robot6/move_home`, `/robot6/scan_patient`, `/robot6/scan_medicine`, `/robot6/cancel_mission` | B | dashboard (투약 모드 선택) |
+| IN | `/robot6/start_tracking` | B 챌린지 | dashboard (간호사 추종 활성화) |
 | IN | `/robot6/patient_identified` | A | 신원 확인 결과 → INTERVIEW/NEXT_ROOM 전이 |
-| IN | `/robot6/target_pose`, `/robot6/emergency_stop` | B | |
+| IN | `/robot6/target_pose`, `/robot6/emergency_stop` | B 챌린지 | |
 | OUT | `/robot6/robot_state` | A·B | |
 | OUT | `/robot6/navigate_to_pose`, `/robot6/undock`, `/robot6/dock` | A·B | action client |
-| OUT | `/robot6/tracker/reset` | B | undock 후 |
+| OUT | `/robot6/tracker/reset` | B 챌린지 | 추종 활성화 후 |
 | OUT | `/robot6/db/get_prescription` (내부) | B | scan_patient 시 |
+| OUT | `/robot6/db/update_visit_status` (내부) | A | 병실 방문 결과 기록 |
 | OUT | `/robot6/scanner/verify_medicine` (내부) | B | scan_medicine 시 |
 
 **상태기**:
 - `patrol`: `IDLE → UNDOCK → PATROL → IDENTIFY → INTERVIEW → NEXT_ROOM → (반복) → RETURN → DOCK`
-- `medication`: `IDLE → UNDOCK → FOLLOW → SCAN → RETURN → DOCK`
+- `medication`(기본): `IDLE → UNDOCK → MOVE → SCAN → RETURN → DOCK`
+- `medication`(챌린지): `MOVE` → `FOLLOW`(간호사 추종)로 대체
 
-**Patrol(A)**: 병실 waypoint 순서대로 `navigate_to_pose` → `patient_identifier`가 `/robot6/patient_identified` 발행 → `identified`면 INTERVIEW(웹 문진 대기), `absent`/`mismatch`면 재방문 큐에 적재 → 마지막에 재방문 후 RETURN.
+**Patrol(A)**: 병실 waypoint 순서대로 `navigate_to_pose` → `patient_identifier`가 `/robot6/patient_identified` 발행 → `identified`면 INTERVIEW(웹 문진 대기), `absent`/`mismatch`면 재방문 큐에 적재 → 결과는 `/robot6/db/update_visit_status`로 기록 → 마지막에 재방문 후 RETURN.
 
 **Prescription session(B)**: `/robot6/scan_patient` 성공 시 `medicines[]` + `current_step=0`. `/robot6/scan_medicine`마다 `medicines[current_step]`과 검증 결과 비교, match 시 step++.
 
-**Following(B)**: `FOLLOW` 동안 `/robot6/target_pose` 수신 시 0.2–1.0s 주기로 `cancelTask` → `/robot6/navigate_to_pose`.
+**Move(B 기본)**: `MOVE` 동안 호실/제조실 waypoint로 `navigate_to_pose` 자율주행. 도착 시 SCAN으로 전이.
+
+**Follow(B 챌린지)**: `/robot6/start_tracking` 활성화 시 `FOLLOW`로 진입, `/robot6/target_pose` 수신마다 0.2–1.0s 주기로 `cancelTask` → `/robot6/navigate_to_pose`.
 
 ---
 
@@ -160,7 +166,7 @@ ROS param: `mission_type` 무관 독립 노드. `current_room`(방문 병실), `
 
 ## nurse_tracker
 
-**역할**: RGB+depth로 간호사 1명 추적 → map frame `/robot6/target_pose`·`/robot6/target_bbox` 발행. OCL 기반 detection/tracking에 feature memory·ReID를 결합한다 (scope 분리 없이 처음부터 OCL).
+**역할** (B 챌린지): RGB+depth로 간호사 1명 추적 → map frame `/robot6/target_pose`·`/robot6/target_bbox` 발행. OCL 기반 detection/tracking에 feature memory·ReID를 결합한다 (scope 분리 없이 처음부터 OCL). 투약 시나리오 기본 플로우는 자율주행이며, 본 노드는 `/robot6/start_tracking` 활성화 시에만 사용한다.
 
 | 방향 | 데이터 | 비고 |
 | --- | --- | --- |
@@ -244,9 +250,10 @@ flowchart TD
 | --- | --- | --- | --- |
 | IN | `/robot6/db/get_prescription` | A·B | A: 병실 검증 / B: 처방 로드 |
 | IN | `/robot6/db/verify_medicine` | B | |
+| IN | `/robot6/db/update_visit_status` | A | 병실 방문 결과 기록 |
 | OUT | `PatientInfo`, `MedicineInfo[]` | A·B | `admin_order` 순 |
 
-**환자 상태**: `firebase_client.update_patient_status(patient_id, status)` — patrol 중 `absent`/`mismatch` 등을 기록 (재방문·운영 통계용). 문진표 자체는 **웹 앱이 직접 Firestore에 저장**하므로 db_bridge ROS 서비스 대상이 아니다.
+**방문 상태**: `/robot6/db/update_visit_status`(`UpdateVisitStatus`) → `firebase_client.update_visit_status(patient_id, room, status, session_id)` — patrol 중 `identified`/`absent`/`mismatch`/`no_qr`/`db_error`를 Firestore `patient_visits`에 기록 (재방문·운영 통계용). 문진표 자체는 **웹 앱이 직접 Firestore에 저장**하므로 db_bridge ROS 서비스 대상이 아니다.
 
 스키마: [04_db_schema.md](04_db_schema.md)
 

@@ -4,10 +4,14 @@ Supports two mission types on the same platform:
 
 * ``patrol``     IDLE -> UNDOCK -> PATROL -> IDENTIFY -> INTERVIEW
                  -> NEXT_ROOM -> RETURN -> DOCK
-* ``medication`` IDLE -> UNDOCK -> FOLLOW -> SCAN -> RETURN -> DOCK
+* ``medication`` IDLE -> UNDOCK -> MOVE -> SCAN -> RETURN -> DOCK
 
 NEXT_ROOM loops back to PATROL while rooms remain; once the patrol list is
 exhausted it proceeds to RETURN.
+
+For ``medication`` the baseline move step is autonomous navigation (``MOVE``).
+The nurse-following challenge replaces ``MOVE`` with ``FOLLOW`` when
+``/robot6/start_tracking`` is active; both lead to ``SCAN``.
 """
 
 
@@ -29,7 +33,8 @@ PATROL_FLOW = {
 
 MEDICATION_FLOW = {
     'IDLE': ('UNDOCK',),
-    'UNDOCK': ('FOLLOW',),
+    'UNDOCK': ('MOVE', 'FOLLOW'),   # MOVE=autonomous (baseline), FOLLOW=tracking challenge
+    'MOVE': ('SCAN',),
     'FOLLOW': ('SCAN',),
     'SCAN': ('RETURN',),
     'RETURN': ('DOCK',),
@@ -47,7 +52,7 @@ class StateMachine:
     """Mission state machine parameterised by mission type."""
 
     STATES = ('IDLE', 'UNDOCK', 'PATROL', 'IDENTIFY', 'INTERVIEW', 'NEXT_ROOM',
-              'FOLLOW', 'SCAN', 'RETURN', 'DOCK', 'ERROR')
+              'MOVE', 'FOLLOW', 'SCAN', 'RETURN', 'DOCK', 'ERROR')
 
     def __init__(self, mission_type=MISSION_MEDICATION):
         """Start in IDLE for the given mission type (defaults to medication)."""

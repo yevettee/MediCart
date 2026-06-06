@@ -13,14 +13,14 @@
 | `turtlebot4_node` | `/robot6/odom`, `/tf` | `/robot6/cmd_vel` |
 | Nav2 | `/robot6/cmd_vel`, `/robot6/map` | `/robot6/scan`, `/robot6/vision_obstacles`; `/robot6/navigate_to_pose` |
 | Create3 | — | `/robot6/undock`, `/robot6/dock` |
-| `dashboard` | `/robot6/emergency_stop` | `/robot6/robot_state`, `/robot6/patient_identified`; calls `/robot6/start_patrol`, `/robot6/start_tracking`, `/robot6/move_home`, `/robot6/scan_*`, `/robot6/cancel_mission` |
-| `mission_manager` | `/robot6/robot_state`; serves `/robot6/start_patrol` + dashboard srv | `/robot6/target_pose`, `/robot6/patient_identified`, `/robot6/emergency_stop`; clients Nav2/Create3/tracker/db/scanner |
+| `dashboard` | `/robot6/emergency_stop` | `/robot6/robot_state`, `/robot6/patient_identified`; calls `/robot6/start_patrol`, `/robot6/start_medication`, `/robot6/start_tracking`, `/robot6/move_home`, `/robot6/scan_*`, `/robot6/cancel_mission` |
+| `mission_manager` | `/robot6/robot_state`; serves `/robot6/start_patrol`, `/robot6/start_medication` + dashboard srv | `/robot6/target_pose`, `/robot6/patient_identified`, `/robot6/emergency_stop`; clients Nav2/Create3/tracker/db(get_prescription·update_visit_status)/scanner |
 | `patient_identifier` | `/robot6/patient_identified` | `/robot6/oakd/image_raw`, `/robot6/oakd/depth_image`; calls `/robot6/db/get_prescription` |
 | `nurse_tracker` | `/robot6/target_pose`, `/robot6/target_bbox` | `/robot6/oakd/*`, `/robot6/tracker/reset`, `/tf` |
 | `obstacle_detector` | `/robot6/vision_obstacles` | `/robot6/oakd/image_raw` (+`camera_info`); pure-vision depth, 미확정 |
 | `ocr_detector` | `/robot6/ocr/get_result` | `/robot6/oakd/image_raw` |
 | `scanner` | `/robot6/scanner/verify_medicine` | `/robot6/ocr/get_result`, `/robot6/db/verify_medicine` |
-| `db_bridge` | `/robot6/db/get_prescription`, `/robot6/db/verify_medicine` | — |
+| `db_bridge` | `/robot6/db/get_prescription`, `/robot6/db/verify_medicine`, `/robot6/db/update_visit_status` | — |
 | `medi_interfaces` | *(타입만)* msg/srv `.msg`/`.srv` | — |
 
 ```mermaid
@@ -129,8 +129,9 @@ Costmap: `/robot6/scan` + `/robot6/vision_obstacles` — ObstacleLayer yaml.
 ```
 medi_interfaces/
 ├── msg/  RobotState, MedicineInfo, PatientInfo, TargetBBox, PatientIdentified
-└── srv/  StartTracking, StartPatrol, MoveHome, ScanPatient, ScanMedicine,
-          GetOcrResult, GetPrescription, VerifyMedicine
+└── srv/  StartPatrol, StartMedication, StartTracking, MoveHome,
+          ScanPatient, ScanMedicine, GetOcrResult, GetPrescription,
+          VerifyMedicine, UpdateVisitStatus
 ```
 
 ### Topic graph (`/robot6` namespace)
@@ -154,21 +155,23 @@ medi_interfaces/
 
 ### Service graph
 
-| Service | 타입 | Server | Client |
-| --- | --- | --- | --- |
-| `/robot6/start_patrol` | `StartPatrol` | mission_manager | dashboard |
-| `/robot6/start_tracking` | `StartTracking` | mission_manager | dashboard |
-| `/robot6/move_home` | `MoveHome` | mission_manager | dashboard |
-| `/robot6/scan_patient` | `ScanPatient` | mission_manager | dashboard |
-| `/robot6/scan_medicine` | `ScanMedicine` | mission_manager | dashboard |
-| `/robot6/ocr/get_result` | `GetOcrResult` | ocr_detector | scanner |
-| `/robot6/scanner/verify_medicine` | `VerifyMedicine` | scanner | mission_manager |
-| `/robot6/db/get_prescription` | `GetPrescription` | db_bridge | mission_manager |
-| `/robot6/db/verify_medicine` | `VerifyMedicine` | db_bridge | scanner (선택) |
-| `/robot6/cancel_mission` | `std_srvs/Trigger` | mission_manager | dashboard |
-| `/robot6/tracker/reset` | `std_srvs/Trigger` | nurse_tracker | mission_manager |
+| Service | 타입 | Server | Client | 모드 |
+| --- | --- | --- | --- | --- |
+| `/robot6/start_patrol` | `StartPatrol` | mission_manager | dashboard | A 진입(=순찰 모드 선택) |
+| `/robot6/start_medication` | `StartMedication` | mission_manager | dashboard | B 진입(=투약 모드 선택, 자율주행 기본) |
+| `/robot6/start_tracking` | `StartTracking` | mission_manager | dashboard | B 챌린지(간호사 추종) |
+| `/robot6/move_home` | `MoveHome` | mission_manager | dashboard | A·B |
+| `/robot6/scan_patient` | `ScanPatient` | mission_manager | dashboard | B |
+| `/robot6/scan_medicine` | `ScanMedicine` | mission_manager | dashboard | B |
+| `/robot6/ocr/get_result` | `GetOcrResult` | ocr_detector | scanner | B(내부) |
+| `/robot6/scanner/verify_medicine` | `VerifyMedicine` | scanner | mission_manager | B(내부) |
+| `/robot6/db/get_prescription` | `GetPrescription` | db_bridge | mission_manager, patient_identifier | A·B(내부) |
+| `/robot6/db/verify_medicine` | `VerifyMedicine` | db_bridge | scanner (선택) | B(내부) |
+| `/robot6/db/update_visit_status` | `UpdateVisitStatus` | db_bridge | mission_manager | A(내부) |
+| `/robot6/cancel_mission` | `std_srvs/Trigger` | mission_manager | dashboard | A·B |
+| `/robot6/tracker/reset` | `std_srvs/Trigger` | nurse_tracker | mission_manager | B 챌린지 |
 
-> **Note:** operator는 `/robot6/scan_patient` / `/robot6/scan_medicine`만 사용. `/robot6/db/get_prescription`은 mission_manager→db_bridge 내부용.
+> **Note:** operator(web)는 모드 선택용 `/robot6/start_patrol` · `/robot6/start_medication`(+챌린지 `/robot6/start_tracking`)과 `/robot6/scan_patient` / `/robot6/scan_medicine`만 호출. `/robot6/db/*`는 mission_manager·patient_identifier → db_bridge 내부 호출.
 
 ### Action graph
 
@@ -197,7 +200,8 @@ geometry_msgs/Point spatial_coordinates
 ```
 std_msgs/Header header
 string state          # IDLE, UNDOCK, PATROL, IDENTIFY, INTERVIEW, NEXT_ROOM,
-                      # FOLLOW, SCAN, RETURN, DOCK, ERROR
+                      # MOVE, FOLLOW, SCAN, RETURN, DOCK, ERROR
+                      # MOVE=투약 자율주행 기본, FOLLOW=투약 간호사 추종(챌린지)
 float32 battery
 int32 error_code
 string error_message
@@ -243,19 +247,28 @@ string room
 
 ## medi_interfaces — Service 정의
 
-### StartTracking.srv
+### StartPatrol.srv
 
 ```yaml
-# Request (empty)
+# Request (empty) — 순찰 모드 선택 + 미션 시작
 ---
 bool success
 string message
 ```
 
-### StartPatrol.srv
+### StartMedication.srv
 
 ```yaml
-# Request (empty)
+# Request (empty) — 투약 모드 선택 + 미션 시작 (자율주행 기본 플로우)
+---
+bool success
+string message
+```
+
+### StartTracking.srv
+
+```yaml
+# Request (empty) — 투약 모드 챌린지: 간호사 추종 활성화
 ---
 bool success
 string message
@@ -332,6 +345,20 @@ string message
 bool success
 string message
 ```
+
+### UpdateVisitStatus.srv
+
+```yaml
+string patient_id
+string room
+string status         # identified / absent / mismatch / no_qr / db_error
+string session_id     # robot_session_id (선택)
+---
+bool success
+string message
+```
+
+`mission_manager`(A)가 병실 방문 결과를 Firestore `patient_visits` 컬렉션에 기록할 때 사용. 플로우차트의 `MM → DB : UpdateVisitStatus`에 대응한다.
 
 ---
 
