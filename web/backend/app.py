@@ -13,7 +13,7 @@ import yaml
 from flask import Flask, Response, jsonify, request, send_file
 from flask_cors import CORS
 
-import patients
+import patients as patient_store
 import fb_read
 import ocr
 
@@ -93,14 +93,14 @@ def me():
 # ── 환자 ────────────────────────────────────────────────────────────────────
 @app.get("/api/patients")
 def patients():
-    return jsonify(patients.load_patients())
+    return jsonify(patient_store.load_patients())
 
 
 @app.get("/api/patients/<pid>")
 def patient(pid):
     if not _PID_RE.match(pid):
         return jsonify({"error": "invalid id"}), 400
-    p = patients.get_patient(pid)
+    p = patient_store.get_patient(pid)
     if not p:
         return jsonify({"error": "not found"}), 404
     p = dict(p)
@@ -142,7 +142,7 @@ def intake():
     body = request.get_json(force=True, silent=True) or {}
     pid = str(body.get("patientId") or "")
     # 형식 검증 + 실제 환자 명부에 존재해야 저장(임의 키 쓰기·존재하지 않는 환자 차단)
-    if not _PID_RE.match(pid) or patients.get_patient(pid) is None:
+    if not _PID_RE.match(pid) or patient_store.get_patient(pid) is None:
         return jsonify({"error": "invalid or unknown patientId"}), 400
     fb_read.save_intake(pid, body)
     return jsonify({"ok": True, "patientId": pid})
