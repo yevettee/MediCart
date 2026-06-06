@@ -43,3 +43,9 @@ def test_cmd_payload_bad_mode():
 def test_valid_pid():
     assert valid_pid("P-2026-0001") is True
     assert valid_pid("../x") is False
+
+
+def test_ocr_payload():
+    from fb_read import ocr_payload
+    assert ocr_payload("타이레놀", 0.9, 1000) == {"text": "타이레놀", "conf": 0.9, "ts": 1000}
+    assert ocr_payload("x", None, 5)["conf"] is None

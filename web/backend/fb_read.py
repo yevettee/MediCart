@@ -130,3 +130,14 @@ def get_intake(pid):
     db = _init()
     node = db.reference(f"patients/{pid}/intake").get()
     return (node or {}).get("data") if isinstance(node, dict) else None
+
+
+def ocr_payload(text, conf, ts):
+    """RTDB ocr/latest 페이로드(순수)."""
+    return {"text": text, "conf": conf, "ts": int(ts)}
+
+
+def set_ocr(text, conf=None):
+    """OCR 결과를 RTDB ocr/latest 에 기록."""
+    db = _init()
+    db.reference("ocr/latest").set(ocr_payload(text, conf, int(time.time() * 1000)))
