@@ -1,0 +1,19 @@
+[Unit]
+Description=intel hospital_web Flask backend (:5000)
+After=network.target redis-server.service
+
+[Service]
+User=rokey
+WorkingDirectory=/home/rokey/rokey_ws/src/intel1/hospital_web/backend
+EnvironmentFile=/home/rokey/rokey_ws/src/intel1/common/robot.env
+Environment=PORT=5000
+Environment=COOKIE_SECURE=1
+Environment=FRONTEND_ORIGIN=https://intel.thatshoon.com
+Environment=INTEL_PASSWORD=rokey1234
+Environment=INTEL_AUTH_TOKEN=intel-demo-token-2026
+ExecStart=/home/rokey/rokey_ws/src/intel1/hospital_web/backend/venv/bin/python app.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
