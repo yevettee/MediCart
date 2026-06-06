@@ -1,6 +1,4 @@
 flask
 flask-cors
-redis
-pandas
-openpyxl
+firebase-admin
 pyyaml

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """app — 병동 보조 로봇 웹 백엔드 (Flask).
 
-PC3에서 PC1/PC2 두 Redis + 환자 데이터를 읽어 REST + SSE로 프론트(Next.js)에 제공.
+Firebase RTDB + 환자 데이터를 읽어 REST + SSE로 프론트(Next.js)에 제공.
 실행: venv/bin/python app.py  (기본 0.0.0.0:5000)
 """
 import os
@@ -11,8 +11,8 @@ import yaml
 from flask import Flask, Response, jsonify, request, send_file
 from flask_cors import CORS
 
-import patient_data
-import redis_bus
+import patients
+import fb_read
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 등록번호 형식 검증 — 키 주입·IDOR 방지 (P-YYYY-NNNN)
@@ -82,36 +82,36 @@ def me():
 # ── 환자 ────────────────────────────────────────────────────────────────────
 @app.get("/api/patients")
 def patients():
-    return jsonify(patient_data.load_patients())
+    return jsonify(patients.load_patients())
 
 
 @app.get("/api/patients/<pid>")
 def patient(pid):
     if not _PID_RE.match(pid):
         return jsonify({"error": "invalid id"}), 400
-    p = patient_data.get_patient(pid)
+    p = patients.get_patient(pid)
     if not p:
         return jsonify({"error": "not found"}), 404
     p = dict(p)
-    p["intake"] = redis_bus.get_intake(pid)   # 저장된 문진표(있으면)
+    p["intake"] = fb_read.get_intake(pid)   # 저장된 문진표(있으면)
     return jsonify(p)
 
 
 # ── AMR 상태/스트림 ──────────────────────────────────────────────────────────
 @app.get("/api/amrs")
 def amrs():
-    return jsonify(redis_bus.snapshots())
+    return jsonify(fb_read.snapshots())
 
 
 @app.get("/api/stream")
 def stream():
-    return Response(redis_bus.telemetry_stream(), mimetype="text/event-stream",
+    return Response(fb_read.telemetry_stream(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.get("/api/alerts")
 def alerts():
-    return Response(redis_bus.alert_stream(), mimetype="text/event-stream",
+    return Response(fb_read.alert_stream(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
@@ -119,7 +119,7 @@ def alerts():
 def mode_cmd():
     body = request.get_json(force=True, silent=True) or {}
     try:
-        redis_bus.publish_mode_cmd(body.get("action"), body.get("mode"), body.get("params"))
+        fb_read.publish_mode_cmd(body.get("action"), body.get("mode"), body.get("params"))
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     return jsonify({"ok": True})
@@ -131,17 +131,18 @@ def intake():
     body = request.get_json(force=True, silent=True) or {}
     pid = str(body.get("patientId") or "")
     # 형식 검증 + 실제 환자 명부에 존재해야 저장(임의 키 쓰기·존재하지 않는 환자 차단)
-    if not _PID_RE.match(pid) or patient_data.get_patient(pid) is None:
+    if not _PID_RE.match(pid) or patients.get_patient(pid) is None:
         return jsonify({"error": "invalid or unknown patientId"}), 400
-    redis_bus.save_intake(pid, body)
+    fb_read.save_intake(pid, body)
     return jsonify({"ok": True, "patientId": pid})
 
 
 # ── 병실→pose + 맵 ───────────────────────────────────────────────────────────
 @app.get("/api/rooms")
 def rooms():
-    with open(os.path.join(HERE, "rooms.yaml")) as f:
-        return jsonify(yaml.safe_load(f) or {})
+    fb_read._init()
+    from fb_read import _db
+    return jsonify({"rooms": _db.reference("rooms").get() or {}})
 
 
 @app.get("/api/map")
