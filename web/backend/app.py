@@ -4,8 +4,10 @@
 Firebase RTDB + 환자 데이터를 읽어 REST + SSE로 프론트(Next.js)에 제공.
 실행: venv/bin/python app.py  (기본 0.0.0.0:5000)
 """
+import hmac
 import os
 import re
+import sys
 
 import yaml
 from flask import Flask, Response, jsonify, request, send_file
@@ -23,11 +25,19 @@ _FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:3000")
 # ── 데모 비밀번호 게이트 ─────────────────────────────────────────────────────
 # 단일 공유 비밀번호. 맞으면 서버가 쿠키(AUTH_TOKEN)를 발급하고, Next 미들웨어와
 # 이 Flask가 같은 쿠키를 검증한다. 공개 호스팅(터널) 앞단 접근 통제용(데모 수준).
-INTEL_PASSWORD = os.environ.get("INTEL_PASSWORD", "rokey1234")
+# 비밀번호·토큰은 env 필수(.env 참고) — 소스에 기본값 하드코딩하지 않는다.
+INTEL_PASSWORD = os.environ.get("INTEL_PASSWORD")
 AUTH_COOKIE    = "intel_auth"
-AUTH_TOKEN     = os.environ.get("INTEL_AUTH_TOKEN", "intel-demo-token-2026")
+AUTH_TOKEN     = os.environ.get("INTEL_AUTH_TOKEN")
 COOKIE_SECURE  = os.environ.get("COOKIE_SECURE", "0") == "1"   # https(터널)면 1
 _OPEN_PATHS    = {"/api/health", "/api/login", "/api/me"}      # 인증 없이 허용
+if not INTEL_PASSWORD or not AUTH_TOKEN:
+    sys.exit("INTEL_PASSWORD / INTEL_AUTH_TOKEN 환경변수를 설정하세요 (.env.example 참고)")
+
+
+def _ct_eq(a, b):
+    """타이밍-세이프 문자열 비교."""
+    return hmac.compare_digest(str(a or ""), str(b or ""))
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024   # 이미지 업로드 허용(OCR)
@@ -41,7 +51,7 @@ def _require_auth():
         return None
     if not request.path.startswith("/api/"):
         return None
-    if request.cookies.get(AUTH_COOKIE) != AUTH_TOKEN:
+    if not _ct_eq(request.cookies.get(AUTH_COOKIE), AUTH_TOKEN):
         return jsonify({"error": "auth required"}), 401
     return None
 
@@ -60,7 +70,7 @@ def health():
 @app.post("/api/login")
 def login():
     body = request.get_json(force=True, silent=True) or {}
-    if str(body.get("password") or "") != INTEL_PASSWORD:
+    if not _ct_eq(body.get("password"), INTEL_PASSWORD):
         return jsonify({"ok": False, "error": "비밀번호가 올바르지 않습니다"}), 401
     resp = jsonify({"ok": True})
     resp.set_cookie(AUTH_COOKIE, AUTH_TOKEN, max_age=60 * 60 * 12,
@@ -77,7 +87,7 @@ def logout():
 
 @app.get("/api/me")
 def me():
-    return jsonify({"authed": request.cookies.get(AUTH_COOKIE) == AUTH_TOKEN})
+    return jsonify({"authed": _ct_eq(request.cookies.get(AUTH_COOKIE), AUTH_TOKEN)})
 
 
 # ── 환자 ────────────────────────────────────────────────────────────────────

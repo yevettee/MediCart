@@ -7,7 +7,7 @@ User=rokey
 WorkingDirectory=/home/rokey/rokey_ws/src/intel1/hospital_web/frontend
 Environment=NODE_ENV=production
 Environment=PORT=3000
-Environment=INTEL_AUTH_TOKEN=intel-demo-token-2026
+Environment=INTEL_AUTH_TOKEN=  # .env에서 주입(하드코딩 금지)
 ExecStart=/usr/bin/npm run start
 Restart=on-failure
 RestartSec=3

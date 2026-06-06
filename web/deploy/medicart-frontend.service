@@ -7,7 +7,8 @@ User=rokey
 WorkingDirectory=/home/rokey/MediCart/web/frontend
 Environment=NODE_ENV=production
 Environment=PORT=3000
-Environment=INTEL_AUTH_TOKEN=intel-demo-token-2026
+# INTEL_AUTH_TOKEN(쿠키 검증용) 등은 .env에서 주입 — 소스에 토큰 하드코딩 금지.
+EnvironmentFile=/home/rokey/MediCart/web/backend/.env
 ExecStart=/usr/bin/npm run start
 Restart=on-failure
 RestartSec=3
