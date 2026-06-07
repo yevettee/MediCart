@@ -4,20 +4,53 @@
 """
 import pytest
 
-from fb_read import merge_snapshots, cmd_payload, valid_pid
+from fb_read import (merge_snapshots, topics_to_snapshot, cmd_payload, valid_pid)
+
+
+def test_topics_to_snapshot_maps_topic_keys_to_fields():
+    node = {
+        "amcl_pose": {"x": 1.0, "y": 2.0, "yaw": 0.5},
+        "odom": {"lin": 0.1, "ang": 0.0},
+        "battery_state": {"pct": 63.0, "voltage": 12.1},
+        "dock_status": {"is_docked": True},
+        "imu": {"yaw_rate": 0.02},
+        "scan": {"angle_min": -3.14, "angle_inc": 0.01, "range_max": 12.0, "ranges": [1.0]},
+        "robot_mode": "patrol", "online": True, "stamp": 1700000000000,
+    }
+    s = topics_to_snapshot(node)
+    assert s["pose"] == {"x": 1.0, "y": 2.0, "yaw": 0.5}
+    assert s["vel"] == {"lin": 0.1, "ang": 0.0}
+    assert s["battery"] == {"pct": 63.0, "voltage": 12.1}
+    assert s["dock"] == {"is_docked": True}
+    assert s["imu"] == {"yaw_rate": 0.02}
+    assert s["scan"]["range_max"] == 12.0
+    assert s["mode"] == "patrol" and s["online"] is True and s["stamp"] == 1700000000000
+
+
+def test_topics_to_snapshot_none_or_control_only():
+    assert topics_to_snapshot(None) is None
+    assert topics_to_snapshot("nope") is None
+    # cmd 만 있는 노드(센서 토픽·stamp 없음) → 미존재 취급
+    assert topics_to_snapshot({"cmd": {"action": "start"}}) is None
+
+
+def test_topics_to_snapshot_defaults_mode_idle():
+    s = topics_to_snapshot({"amcl_pose": {"x": 0.0}, "stamp": 5})
+    assert s["mode"] == "idle" and s["online"] is False and s["stamp"] == 5
 
 
 def test_merge_snapshots_injects_source_and_handles_missing():
-    raw = {"robot6": {"pose": {"x": 1.0}, "mode": "idle"}}
-    out = merge_snapshots(raw, ["robot6", "amr2"])
-    assert out["robot6"]["mode"] == "idle"
-    assert out["robot6"]["source"] == "robot6"
-    assert out["amr2"] is None        # RTDB에 없는 소스
+    raw = {"robot3": {"amcl_pose": {"x": 1.0}, "robot_mode": "idle", "stamp": 5}}
+    out = merge_snapshots(raw, ["robot3", "robot6"])
+    assert out["robot3"]["mode"] == "idle"
+    assert out["robot3"]["pose"] == {"x": 1.0}
+    assert out["robot3"]["source"] == "robot3"
+    assert out["robot6"] is None      # RTDB에 없는 소스
 
 
 def test_merge_snapshots_none_raw():
-    out = merge_snapshots(None, ["robot6"])
-    assert out == {"robot6": None}
+    out = merge_snapshots(None, ["robot3"])
+    assert out == {"robot3": None}
 
 
 def test_cmd_payload_valid():
@@ -49,3 +82,64 @@ def test_ocr_payload():
     from fb_read import ocr_payload
     assert ocr_payload("타이레놀", 0.9, 1000) == {"text": "타이레놀", "conf": 0.9, "ts": 1000}
     assert ocr_payload("x", None, 5)["conf"] is None
+
+
+def test_sanitize_fields_keys_and_numbers():
+    from fb_read import sanitize_fields
+    out = sanitize_fields({
+        "patientId": "P-2026-0001",       # 제어키 → 제외
+        "음식/기타 알레르기": "없음",       # '/' → '_'
+        "수축기혈압": "152",               # 숫자키 → int
+        "체온": "36.8",                    # 숫자키 → float
+        "통증부위": "두부",                # 문자 유지
+        "SpO2": "",                        # 빈 숫자 → 원본 유지
+    })
+    assert "patientId" not in out
+    assert out["음식_기타 알레르기"] == "없음"
+    assert out["수축기혈압"] == 152 and isinstance(out["수축기혈압"], int)
+    assert out["체온"] == 36.8
+    assert out["통증부위"] == "두부"
+    assert out["SpO2"] == ""
+
+
+def test_visit_payload_injects_pid():
+    from fb_read import visit_payload
+    v = visit_payload("P-2026-0007", {"주호소(CC)": "기침", "맥박": "88"})
+    assert v["등록번호"] == "P-2026-0007"
+    assert v["주호소(CC)"] == "기침" and v["맥박"] == 88
+
+
+def test_vitals_from_visit_extracts_subset():
+    from fb_read import vitals_from_visit
+    visit = {"수축기혈압": 152, "맥박": 88, "주호소(CC)": "x", "방문일": "2026-06-06"}
+    vit = vitals_from_visit(visit)
+    assert vit == {"수축기혈압": 152, "맥박": 88}   # 생체징후 키만
+
+
+def test_mission_payload_whitelist():
+    from fb_read import mission_payload
+    m = mission_payload("dock", None, 1000)
+    assert m == {"action": "dock", "params": {}, "status": "pending", "ts": 1000}
+    for bad in ("rm-rf", "format", ""):
+        with pytest.raises(ValueError):
+            mission_payload(bad, None, 1)
+
+
+def test_valid_robot_ns():
+    from fb_read import valid_robot_ns
+    assert valid_robot_ns("robot3") and valid_robot_ns("robot6")
+    assert not valid_robot_ns("amr2") and not valid_robot_ns("../x")
+
+
+def test_list_missions_filters_meta_and_sorts():
+    from fb_read import list_missions
+    pool = {
+        "_meta": {"purpose": "x"},
+        "m1": {"action": "dock", "ts": 100, "status": "pending"},
+        "m2": {"action": "undock", "ts": 300, "status": "pending"},
+        "m3": {"action": "reboot", "ts": 200, "status": "done"},
+    }
+    out = list_missions(pool)
+    assert [m["id"] for m in out] == ["m2", "m3", "m1"]   # ts 내림차순, _meta 제외
+    assert all(not m["id"].startswith("_") for m in out)
+    assert list_missions(None) == [] and list_missions("x") == []

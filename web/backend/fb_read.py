@@ -1,42 +1,80 @@
 """fb_read — Flask 백엔드의 Firebase RTDB 경계 (redis_bus.py 대체).
 
-순수 로직(snapshot 병합·검증·cmd 페이로드)은 firebase/Flask 무관이라 단위테스트한다.
-firebase-admin 결선(리스너→SSE·get·cmd set·intake)은 같은 모듈에 Task 3에서 추가한다.
+순수 로직(토픽별 노드→snapshot 조립·병합·검증·cmd 페이로드)은 firebase/Flask 무관이라 단위테스트한다.
+firebase-admin 결선(리스너→SSE·get·cmd set·intake)은 같은 모듈에 있다.
 프론트는 이 백엔드의 SSE/REST만 쓰고 RTDB를 직접 만지지 않는다.
+
+RTDB 레이아웃: 최상위 robot3/robot6 노드에 ward_bridge가 구독하는 토픽 basename이 키로 들어온다
+(amcl_pose/odom/scan/battery_state/dock_status/imu/robot_mode + online/stamp, 제어=cmd, 이벤트=alerts).
+이 모듈이 토픽별 노드를 프론트가 쓰는 평탄 snapshot(pose/vel/battery/dock/imu/scan/mode/...)으로 조립한다.
 """
 import os
 import re
 
-PRIMARY_NS = os.environ.get("PRIMARY_NS", "robot6")
-SECONDARY_NS = os.environ.get("SECONDARY_NS", "amr2")
+# NS는 common/robot.env(단일 소스)의 ROBOT_NAMESPACE를 따른다(PRIMARY_NS로 명시 override 가능).
+# 웹은 두 AMR(robot3·robot6)을 모두 보여주므로 SECONDARY는 PRIMARY의 나머지로 자동 도출.
+_PRIMARY = (os.environ.get("PRIMARY_NS") or os.environ.get("ROBOT_NAMESPACE") or "robot3").strip("/")
+_COMPLEMENT = {"robot3": "robot6", "robot6": "robot3"}.get(_PRIMARY, "robot6")
+PRIMARY_NS = _PRIMARY
+SECONDARY_NS = (os.environ.get("SECONDARY_NS") or _COMPLEMENT).strip("/")
 SOURCES = [PRIMARY_NS, SECONDARY_NS]
 
 _PID_RE = re.compile(r"^P-\d{4}-\d{4}$")
 _MODE_RE = re.compile(r"^(mapping|patrol|errand|guide|intake|round)$")
 _ACTION_RE = re.compile(r"^(start|stop|clear)$")
 
+# RTDB 토픽 basename → 프론트 snapshot 필드 (ward_bridge.state_payload 와 짝)
+_TOPIC_TO_FIELD = {
+    "amcl_pose":     "pose",
+    "odom":          "vel",
+    "battery_state": "battery",
+    "dock_status":   "dock",
+    "imu":           "imu",
+    "scan":          "scan",
+}
+
 
 def valid_pid(pid):
     return bool(_PID_RE.match(str(pid)))
 
 
-def merge_snapshots(robots_raw, sources):
-    """RTDB robots/ get() 결과({ns: state}) → {src: state(+source)|None}."""
-    raw = robots_raw or {}
+def topics_to_snapshot(node):
+    """RTDB {ns} 토픽별 노드 → 프론트 평탄 snapshot. 토픽 데이터 없으면 None.
+
+    amcl_pose→pose, odom→vel, battery_state→battery, dock_status→dock, imu→imu, scan→scan,
+    robot_mode→mode. online/stamp 는 그대로 전달. cmd/alerts 같은 비-토픽 키는 무시.
+    """
+    if not isinstance(node, dict):
+        return None
+    snap = {}
+    for topic, field in _TOPIC_TO_FIELD.items():
+        if topic in node:
+            snap[field] = node[topic]
+    has_topic = bool(snap)
+    snap["mode"] = node.get("robot_mode", "idle")
+    snap["online"] = bool(node.get("online", False))
+    snap["stamp"] = node.get("stamp", 0)
+    # 센서 토픽이 하나도 없고 stamp 도 없으면(예: cmd 만 있는 노드) 미존재로 취급
+    if not has_topic and not node.get("stamp"):
+        return None
+    return snap
+
+
+def merge_snapshots(per_ns_raw, sources):
+    """{ns: 토픽별 노드|None} → {src: snapshot(+source)|None}."""
+    raw = per_ns_raw or {}
     out = {}
     for src in sources:
-        st = raw.get(src) if isinstance(raw, dict) else None
-        if isinstance(st, dict):
-            st = dict(st)
-            st["source"] = src
-            out[src] = st
-        else:
-            out[src] = None
+        node = raw.get(src) if isinstance(raw, dict) else None
+        snap = topics_to_snapshot(node)
+        if snap is not None:
+            snap["source"] = src
+        out[src] = snap
     return out
 
 
 def cmd_payload(action, mode, params, ts):
-    """웹→로봇 명령 페이로드 빌드(화이트리스트 검증). robots/{ns}/cmd 에 set 될 dict."""
+    """웹→로봇 명령 페이로드 빌드(화이트리스트 검증). {ns}/cmd 에 set 될 dict."""
     if not _ACTION_RE.match(str(action)):
         raise ValueError("invalid action")
     if action != "clear" and not _MODE_RE.match(str(mode or "")):
@@ -44,12 +82,86 @@ def cmd_payload(action, mode, params, ts):
     return {"action": action, "mode": mode, "params": params or {}, "ts": int(ts)}
 
 
+# ── 환자 외래방문/수정 페이로드(순수) ──────────────────────────────────────────
+_KEY_BAD = re.compile(r"[/.#$\[\]]")          # RTDB 키 금지문자
+# 문진/생체징후 중 숫자로 저장할 키(상세 페이지가 Number()로 비교) — 빈문자열은 제외
+_NUMERIC_KEYS = {"수축기혈압", "이완기혈압", "맥박", "호흡", "체온", "SpO2",
+                 "통증점수", "신장(cm)", "체중(kg)", "나이", "BMI"}
+# visit 레코드에서 추려 vitals(최근 생체징후)로도 반영할 키
+VISIT_VITALS_KEYS = ["수축기혈압", "이완기혈압", "맥박", "호흡", "체온", "SpO2",
+                     "통증점수", "통증부위", "의식상태", "낙상위험"]
+
+
+def _safe_key(k):
+    return _KEY_BAD.sub("_", str(k))
+
+
+def _coerce(key, value):
+    """숫자 키는 가능하면 int/float 로(빈값·비숫자는 원본 유지)."""
+    if key in _NUMERIC_KEYS and isinstance(value, str) and value.strip():
+        try:
+            f = float(value)
+            return int(f) if f.is_integer() else f
+        except ValueError:
+            return value
+    return value
+
+
+def sanitize_fields(data):
+    """입력 dict → RTDB 안전 키 + 숫자 보정. patientId 등 제어키는 제외."""
+    out = {}
+    for k, v in (data or {}).items():
+        if k in ("patientId", "id", "등록번호"):
+            continue
+        sk = _safe_key(k)
+        out[sk] = _coerce(sk, v)
+    return out
+
+
+def visit_payload(pid, data):
+    """문진 입력 → 외래방문 기록 dict(키 정제·숫자 보정·등록번호 주입)."""
+    out = sanitize_fields(data)
+    out["등록번호"] = pid
+    return out
+
+
+def vitals_from_visit(visit):
+    """visit 레코드에서 생체징후 부분만 추출(최근 생체징후 노드 갱신용)."""
+    return {k: visit[k] for k in VISIT_VITALS_KEYS if k in visit}
+
+
+# ── mission_pool (웹→로봇 DB 명령 하달, ROS 노드 통신 없음) ────────────────────
+ROBOT_NAMESPACES = ("robot3", "robot6")
+MISSION_ACTIONS = ("shutdown", "reboot", "ros_restart", "dock", "undock")
+
+
+def valid_robot_ns(ns):
+    return ns in ROBOT_NAMESPACES
+
+
+def mission_payload(action, params, ts):
+    """{ns}/mission_pool 에 push 될 명령(화이트리스트 검증)."""
+    if action not in MISSION_ACTIONS:
+        raise ValueError("invalid action")
+    return {"action": action, "params": params or {}, "status": "pending", "ts": int(ts)}
+
+
+def list_missions(pool_raw):
+    """mission_pool get() 결과 → 최신순 리스트(_meta 등 '_' 키 제외, id 주입)."""
+    raw = pool_raw or {}
+    if not isinstance(raw, dict):
+        return []
+    out = [dict(v, id=k) for k, v in raw.items()
+           if not k.startswith("_") and isinstance(v, dict)]
+    out.sort(key=lambda m: m.get("ts", 0), reverse=True)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # firebase-admin 결선 (Task 3)
 # ---------------------------------------------------------------------------
 import json
 import queue
-import threading
 import time
 
 _db = None
@@ -70,31 +182,14 @@ def _init():
 
 
 def snapshots():
-    """두 AMR 최신 스냅샷 {src: state|None}. (RTDB robots/ 1회 읽기)"""
+    """두 AMR 최신 스냅샷 {src: snapshot|None}. (RTDB 최상위 {ns} 노드 각 1회 읽기)"""
     db = _init()
-    raw = db.reference("robots").get()
+    raw = {s: db.reference(s).get() for s in SOURCES}
     return merge_snapshots(raw, SOURCES)
 
 
-def _sse_listen(path_of, channels):
-    """ns별 RTDB 경로 변경을 큐로 모아 SSE 제너레이터로 push(source 주입)."""
-    db = _init()
-    q = queue.Queue(maxsize=200)
-
-    def _mk(src):
-        def _on(event):
-            if event.data is None:
-                return
-            payload = {"source": src, "data": event.data, "path": event.path}
-            try:
-                q.put(json.dumps(payload, separators=(",", ":")), block=False)
-            except queue.Full:
-                pass
-        return _on
-
-    for src in channels:
-        db.reference(path_of(src)).listen(_mk(src))
-
+def _drain(q):
+    """SSE 제너레이터 공통 루프 — 큐에서 꺼내 data 프레임으로, 비면 keepalive."""
     while True:
         try:
             yield f"data: {q.get(timeout=15)}\n\n"
@@ -103,17 +198,68 @@ def _sse_listen(path_of, channels):
 
 
 def telemetry_stream():
-    return _sse_listen(lambda s: f"robots/{s}/state", SOURCES)
+    """{ns} 노드 변경 → 토픽별 노드를 평탄 snapshot으로 조립해 push(source 주입).
+
+    어떤 토픽이 갱신되든 그 ns 전체를 재조립해 일관된 snapshot을 보낸다(부분 갱신 누락 방지).
+    """
+    db = _init()
+    q = queue.Queue(maxsize=200)
+
+    def _mk(src):
+        ref = db.reference(src)
+        def _on(event):
+            if event.data is None:
+                return
+            snap = topics_to_snapshot(ref.get())
+            if snap is None:
+                return
+            snap["source"] = src
+            try:
+                q.put(json.dumps(snap, separators=(",", ":")), block=False)
+            except queue.Full:
+                pass
+        return _on
+
+    for src in SOURCES:
+        db.reference(src).listen(_mk(src))
+    return _drain(q)
 
 
 def alert_stream():
-    return _sse_listen(lambda s: f"robots/{s}/alerts", SOURCES)
+    """{ns}/alerts push → 평탄 알림({source, ...alert})으로 push."""
+    db = _init()
+    q = queue.Queue(maxsize=200)
+
+    def _emit(src, alert):
+        if not isinstance(alert, dict):
+            return
+        try:
+            q.put(json.dumps({"source": src, **alert}, separators=(",", ":")), block=False)
+        except queue.Full:
+            pass
+
+    def _mk(src):
+        def _on(event):
+            d = event.data
+            if d is None:
+                return
+            # 초기 스냅샷: path="/" 면 {pushid: alert} 묶음, 단일 push 면 alert dict.
+            if event.path == "/" and isinstance(d, dict) and not d.get("class"):
+                for alert in d.values():
+                    _emit(src, alert)
+            else:
+                _emit(src, d)
+        return _on
+
+    for src in SOURCES:
+        db.reference(f"{src}/alerts").listen(_mk(src))
+    return _drain(q)
 
 
 def publish_mode_cmd(action, mode, params=None):
     db = _init()
     payload = cmd_payload(action, mode, params, ts=int(time.time() * 1000))
-    db.reference(f"robots/{PRIMARY_NS}/cmd").set(payload)
+    db.reference(f"{PRIMARY_NS}/cmd").set(payload)
 
 
 def save_intake(pid, data):
@@ -130,6 +276,57 @@ def get_intake(pid):
     db = _init()
     node = db.reference(f"patients/{pid}/intake").get()
     return (node or {}).get("data") if isinstance(node, dict) else None
+
+
+def add_visit(pid, data):
+    """문진 입력을 새 외래방문 기록으로 추가(최신 먼저) + 최근 생체징후(vitals) 갱신.
+
+    patients/{pid}/visits 리스트 맨 앞에 prepend → 상세 페이지 '최근 생체징후'(visits[0])에 즉시 반영.
+    """
+    if not valid_pid(pid):
+        raise ValueError("invalid patientId")
+    visit = visit_payload(pid, data)
+    db = _init()
+    ref = db.reference(f"patients/{pid}/visits")
+    cur = ref.get() or []
+    if isinstance(cur, dict):           # RTDB가 sparse list를 dict로 줄 때 방어
+        cur = [cur[k] for k in sorted(cur)]
+    elif not isinstance(cur, list):
+        cur = []
+    cur = [v for v in cur if v is not None]
+    cur.insert(0, visit)                # 최신 방문을 맨 앞에
+    ref.set(cur)
+    vit = vitals_from_visit(visit)
+    if vit:
+        db.reference(f"patients/{pid}/vitals").update(vit)
+    return visit
+
+
+def update_patient(pid, info=None, vitals=None):
+    """환자 정적정보(info)·최근 생체징후(vitals) 부분 수정(상세 페이지 직접 편집)."""
+    if not valid_pid(pid):
+        raise ValueError("invalid patientId")
+    db = _init()
+    if info:
+        db.reference(f"patients/{pid}/info").update(sanitize_fields(info))
+    if vitals:
+        db.reference(f"patients/{pid}/vitals").update(sanitize_fields(vitals))
+
+
+def push_mission(ns, action, params=None):
+    """웹 명령을 {ns}/mission_pool 뒤에 push(시간순 key). 로봇측 리스너가 읽어 실행."""
+    if not valid_robot_ns(ns):
+        raise ValueError("invalid robot")
+    payload = mission_payload(action, params, int(time.time() * 1000))
+    ref = _init().reference(f"{ns}/mission_pool").push(payload)
+    return ref.key, payload
+
+
+def get_missions(ns):
+    """{ns}/mission_pool 의 명령 목록(최신순). 잘못된 ns 면 빈 리스트."""
+    if not valid_robot_ns(ns):
+        return []
+    return list_missions(_init().reference(f"{ns}/mission_pool").get())
 
 
 def ocr_payload(text, conf, ts):

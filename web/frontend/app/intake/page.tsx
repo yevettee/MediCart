@@ -1,87 +1,92 @@
 "use client";
-import { useEffect, useState } from "react";
-import { getPatients, Patient, saveIntake } from "@/lib/api";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { getPatients, Patient, addVisit } from "@/lib/api";
 
+// 필드 키는 RTDB visit 레코드 키와 정확히 일치 → 저장 시 환자정보 페이지에 그대로 표시된다.
 type Field =
-  | { id: string; label: string; type: "text" | "textarea" | "number" }
-  | { id: string; label: string; type: "radio" | "select"; options: string[] }
-  | { id: string; label: string; type: "check"; options: string[] }
+  | { id: string; label: string; type: "text" | "textarea" | "number" | "date" }
+  | { id: string; label: string; type: "select" | "radio"; options: string[] }
   | { id: string; label: string; type: "scale"; max: number };
 
-const SECTIONS: { title: string; n: string; fields: Field[] }[] = [
-  { n: "01", title: "기본 정보", fields: [
-    { id: "name", label: "성명", type: "text" },
-    { id: "birth", label: "생년월일", type: "text" },
-    { id: "sex", label: "성별", type: "radio", options: ["남", "여"] },
-    { id: "contact", label: "연락처", type: "text" },
-    { id: "insurance", label: "보험 유형", type: "select", options: ["건강보험", "의료급여", "산재", "자보", "기타"] },
+const SECTIONS: { n: string; title: string; fields: Field[] }[] = [
+  { n: "01", title: "내원 정보", fields: [
+    { id: "방문일", label: "방문일", type: "date" },
+    { id: "진료유형", label: "진료유형", type: "radio", options: ["초진", "재진"] },
+    { id: "진료과", label: "진료과", type: "text" },
   ]},
-  { n: "02", title: "내원 목적 (주호소)", fields: [
-    { id: "cc", label: "가장 큰 이유 / 증상", type: "textarea" },
-    { id: "onset", label: "증상 시작 시기", type: "text" },
-    { id: "pain", label: "통증 정도", type: "scale", max: 10 },
-    { id: "assoc", label: "동반 증상 (발열·구토·어지러움 등)", type: "text" },
+  { n: "02", title: "주호소 (CC)", fields: [
+    { id: "주호소(CC)", label: "주호소 / 내원 사유", type: "textarea" },
+    { id: "증상 발생시기_경과", label: "증상 발생시기 / 경과", type: "text" },
+    { id: "통증부위", label: "통증 부위", type: "text" },
+    { id: "통증점수", label: "통증 점수 (NRS)", type: "scale", max: 10 },
   ]},
-  { n: "03", title: "과거 병력", fields: [
-    { id: "pmh", label: "진단받은 질환", type: "check", options: ["고혈압", "당뇨병", "이상지질혈증", "심장질환", "뇌혈관질환", "폐질환", "간질환", "신장질환", "위장관질환", "갑상선질환", "암", "정신건강", "경련/뇌전증", "자가면역질환"] },
-    { id: "surgery", label: "수술 및 입원력", type: "text" },
+  { n: "03", title: "생체징후", fields: [
+    { id: "수축기혈압", label: "수축기혈압 (mmHg)", type: "number" },
+    { id: "이완기혈압", label: "이완기혈압 (mmHg)", type: "number" },
+    { id: "맥박", label: "맥박 (bpm)", type: "number" },
+    { id: "호흡", label: "호흡 (/min)", type: "number" },
+    { id: "체온", label: "체온 (℃)", type: "number" },
+    { id: "SpO2", label: "SpO₂ (%)", type: "number" },
+    { id: "의식상태", label: "의식상태", type: "select", options: ["명료", "기면", "혼미", "반혼수", "혼수"] },
+    { id: "낙상위험", label: "낙상위험", type: "select", options: ["하", "중", "고"] },
   ]},
-  { n: "04", title: "약물 및 알레르기", fields: [
-    { id: "meds", label: "현재 복용 중인 약물", type: "textarea" },
-    { id: "drugAllergy", label: "약물 알레르기 (약물명/반응)", type: "text" },
-    { id: "foodAllergy", label: "음식 알레르기", type: "text" },
-    { id: "anticoag", label: "항응고제·항혈소판제 복용", type: "radio", options: ["없음", "있음"] },
-  ]},
-  { n: "05", title: "가족력", fields: [
-    { id: "family", label: "부모·형제·자녀 질환 (관계 기재)", type: "textarea" },
-  ]},
-  { n: "06", title: "사회력 / 생활습관", fields: [
-    { id: "smoke", label: "흡연", type: "radio", options: ["비흡연", "과거흡연", "현재흡연"] },
-    { id: "alcohol", label: "음주", type: "radio", options: ["없음", "월 1회 이하", "주 1~2회", "주 3회 이상"] },
-    { id: "exercise", label: "운동 / 활동", type: "text" },
-  ]},
-  { n: "07", title: "계통별 문진", fields: [
-    { id: "ros", label: "현재 있는 증상", type: "check", options: ["발열", "체중변화", "두통", "어지러움", "시야이상", "가슴통증", "호흡곤란", "기침", "복통", "소화불량", "배뇨이상", "관절통", "피부발진", "불면", "우울/불안"] },
-  ]},
-  { n: "10", title: "기능 및 안전 평가", fields: [
-    { id: "gait", label: "보행", type: "radio", options: ["독립 보행", "보조 필요", "휠체어/와상"] },
-    { id: "fall", label: "최근 낙상 경험", type: "radio", options: ["없음", "있음"] },
-    { id: "comm", label: "의사소통 / 통역 필요", type: "text" },
-  ]},
-  { n: "11", title: "의료진 전달 사항", fields: [
-    { id: "note", label: "기타 알림 사항", type: "textarea" },
+  { n: "04", title: "간호 / 기타", fields: [
+    { id: "금일 복약 여부", label: "금일 복약 여부", type: "select", options: ["복용", "미복용", "해당없음"] },
+    { id: "최근 발열_감염노출", label: "최근 발열 / 감염 노출", type: "text" },
+    { id: "최근 검사_예정 검사", label: "최근 / 예정 검사", type: "text" },
+    { id: "보고 필요", label: "의료진 보고 필요", type: "radio", options: ["N", "Y"] },
+    { id: "간호 관찰사항", label: "간호 관찰사항", type: "textarea" },
+    { id: "작성 간호사", label: "작성 간호사", type: "text" },
   ]},
 ];
+
+const today = () => new Date().toISOString().slice(0, 10);
 
 export default function IntakePage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [pid, setPid] = useState("");
-  const [form, setForm] = useState<Record<string, unknown>>({});
+  const [form, setForm] = useState<Record<string, unknown>>({ 방문일: today() });
   const [saved, setSaved] = useState<null | "ok" | "err">(null);
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => { getPatients().then((ps) => { setPatients(ps); if (ps[0]) setPid(ps[0].id); }).catch(() => {}); }, []);
+  useEffect(() => {
+    getPatients().then((ps) => { setPatients(ps); if (ps[0]) setPid(ps[0].id); }).catch(() => {});
+  }, []);
+
+  const patient = useMemo(() => patients.find((p) => p.id === pid), [patients, pid]);
+  // 환자 선택 시 진료과를 그 환자의 주 진료과로 프리필(미입력 시)
+  useEffect(() => {
+    if (patient) setForm((f) => ({ ...f, 진료과: f.진료과 || patient["주 진료과"] || "" }));
+  }, [patient]);
 
   const set = (id: string, v: unknown) => { setForm((f) => ({ ...f, [id]: v })); setSaved(null); };
-  const toggle = (id: string, opt: string) => setForm((f) => {
-    const cur = (f[id] as string[]) || []; setSaved(null);
-    return { ...f, [id]: cur.includes(opt) ? cur.filter((x) => x !== opt) : [...cur, opt] };
-  });
 
   async function submit() {
-    try { const r = await saveIntake({ patientId: pid, ...form }); setSaved(r?.ok ? "ok" : "err"); }
-    catch { setSaved("err"); }
+    if (!pid || busy) return;
+    setBusy(true);
+    try {
+      const r = await addVisit(pid, { ...form, 방문일: form.방문일 || today() });
+      setSaved(r?.ok ? "ok" : "err");
+      if (r?.ok) setForm({ 방문일: today(), 진료과: patient?.["주 진료과"] || "" });
+    } catch { setSaved("err"); }
+    finally { setBusy(false); }
   }
 
   return (
-    <div className="p-7 max-w-[860px] pb-24">
+    <div className="p-7 max-w-[880px] pb-28">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <div className="eyebrow">문진표</div>
-          <h1 className="text-[26px] font-bold mt-1">초진 환자 종합 문진표</h1>
+          <div className="eyebrow">문진 · 외래방문</div>
+          <h1 className="text-[26px] font-bold mt-1">외래 방문 문진</h1>
+          <p className="text-[13px] text-ink-3 mt-1">저장하면 선택한 환자의 새 외래방문 기록으로 추가되고, 환자정보 페이지 최근 생체징후에 반영됩니다.</p>
         </div>
-        <select className="field w-[220px]" value={pid} onChange={(e) => setPid(e.target.value)}>
-          {patients.map((p) => <option key={p.id} value={p.id}>{p.성명} · {p.id}</option>)}
-        </select>
+        <div className="flex flex-col items-end gap-1.5">
+          <select className="field w-[240px]" value={pid} onChange={(e) => setPid(e.target.value)}>
+            {patients.map((p) => <option key={p.id} value={p.id}>{p.성명} · {p.id}</option>)}
+          </select>
+          {pid && <Link href={`/patients/${pid}`} className="text-[12.5px] text-teal hover:underline">{patient?.성명} 환자정보 보기 →</Link>}
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 mt-6">
@@ -93,9 +98,9 @@ export default function IntakePage() {
             </div>
             <div className="grid grid-cols-2 gap-x-5 gap-y-4">
               {sec.fields.map((f) => (
-                <div key={f.id} className={f.type === "textarea" || f.type === "check" ? "col-span-2" : ""}>
+                <div key={f.id} className={f.type === "textarea" ? "col-span-2" : ""}>
                   <label className="block text-[12.5px] font-semibold text-ink-2 mb-1.5">{f.label}</label>
-                  <FieldInput f={f} value={form[f.id]} set={set} toggle={toggle} />
+                  <FieldInput f={f} value={form[f.id]} set={set} />
                 </div>
               ))}
             </div>
@@ -103,27 +108,26 @@ export default function IntakePage() {
         ))}
       </div>
 
-      {/* 저장 바 */}
       <div className="fixed bottom-0 left-[248px] right-0 bg-surface/90 backdrop-blur border-t border-line px-7 py-3.5 flex items-center justify-end gap-3">
-        {saved === "ok" && <span className="pill bg-green-soft text-green"><span className="dot bg-green" /> 저장되었습니다</span>}
+        {saved === "ok" && <span className="pill bg-green-soft text-green"><span className="dot bg-green" /> 외래방문 기록 추가됨</span>}
         {saved === "err" && <span className="pill bg-red-soft text-red"><span className="dot bg-red" /> 저장 실패</span>}
-        <button onClick={submit} disabled={!pid}
+        <button onClick={submit} disabled={!pid || busy}
           className="bg-teal text-white font-semibold text-[14px] px-6 py-2.5 rounded-xl hover:bg-teal-600 transition-colors disabled:opacity-40 shadow-[0_6px_16px_-6px_rgba(12,163,154,.6)]">
-          문진표 저장
+          {busy ? "저장 중…" : "외래방문 기록 저장"}
         </button>
       </div>
     </div>
   );
 }
 
-function FieldInput({ f, value, set, toggle }: { f: Field; value: unknown; set: (id: string, v: unknown) => void; toggle: (id: string, o: string) => void }) {
-  if (f.type === "text" || f.type === "number")
-    return <input className="field" type={f.type} value={(value as string) || ""} onChange={(e) => set(f.id, e.target.value)} />;
+function FieldInput({ f, value, set }: { f: Field; value: unknown; set: (id: string, v: unknown) => void }) {
+  if (f.type === "text" || f.type === "number" || f.type === "date")
+    return <input className="field" type={f.type} value={(value as string) ?? ""} onChange={(e) => set(f.id, e.target.value)} />;
   if (f.type === "textarea")
-    return <textarea className="field min-h-[78px] resize-y" value={(value as string) || ""} onChange={(e) => set(f.id, e.target.value)} />;
+    return <textarea className="field min-h-[78px] resize-y" value={(value as string) ?? ""} onChange={(e) => set(f.id, e.target.value)} />;
   if (f.type === "select")
     return (
-      <select className="field" value={(value as string) || ""} onChange={(e) => set(f.id, e.target.value)}>
+      <select className="field" value={(value as string) ?? ""} onChange={(e) => set(f.id, e.target.value)}>
         <option value="">선택</option>
         {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
@@ -138,22 +142,12 @@ function FieldInput({ f, value, set, toggle }: { f: Field; value: unknown; set: 
         })}
       </div>
     );
-  if (f.type === "check")
-    return (
-      <div className="flex flex-wrap gap-2">
-        {f.options.map((o) => {
-          const on = ((value as string[]) || []).includes(o);
-          return <button key={o} type="button" onClick={() => toggle(f.id, o)}
-            className={`px-3 py-1.5 rounded-lg text-[12.5px] font-medium border transition-colors ${on ? "bg-teal-soft text-teal-600 border-teal" : "bg-surface-2 text-ink-2 border-line hover:border-line-strong"}`}>{o}</button>;
-        })}
-      </div>
-    );
   if (f.type === "scale") {
     const cur = Number(value ?? -1);
     return (
       <div className="flex flex-wrap gap-1.5">
         {Array.from({ length: f.max + 1 }, (_, i) => (
-          <button key={i} type="button" onClick={() => set(f.id, i)}
+          <button key={i} type="button" onClick={() => set(f.id, String(i))}
             className={`w-8 h-8 rounded-lg mono text-[13px] font-semibold border transition-colors ${cur === i ? "bg-teal text-white border-teal" : "bg-surface-2 text-ink-2 border-line hover:border-teal"}`}>{i}</button>
         ))}
       </div>

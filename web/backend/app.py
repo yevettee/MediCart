@@ -57,8 +57,8 @@ def _require_auth():
 
 
 # 맵 파일 위치(있으면 서빙). 없으면 available:false.
-MAP_PNG  = os.environ.get("MAP_PNG",  "/home/rokey/rokey_ws/src/intel1/common/maps/ward_map.png")
-MAP_YAML = os.environ.get("MAP_YAML", "/home/rokey/rokey_ws/src/intel1/common/maps/ward_map.yaml")
+MAP_PNG  = os.environ.get("MAP_PNG",  "/home/rokey/MediCart/common/maps/ward_map.png")
+MAP_YAML = os.environ.get("MAP_YAML", "/home/rokey/MediCart/common/maps/ward_map.yaml")
 
 
 @app.get("/api/health")
@@ -136,16 +136,25 @@ def mode_cmd():
     return jsonify({"ok": True})
 
 
-# ── 문진표 저장 ──────────────────────────────────────────────────────────────
-@app.post("/api/intake")
-def intake():
-    body = request.get_json(force=True, silent=True) or {}
-    pid = str(body.get("patientId") or "")
-    # 형식 검증 + 실제 환자 명부에 존재해야 저장(임의 키 쓰기·존재하지 않는 환자 차단)
+# ── 문진표 → 새 외래방문 기록 ─────────────────────────────────────────────────
+@app.post("/api/patients/<pid>/visits")
+def add_visit(pid):
+    # 형식 검증 + 실제 환자 존재해야 추가(임의 키 쓰기·존재하지 않는 환자 차단)
     if not _PID_RE.match(pid) or patient_store.get_patient(pid) is None:
         return jsonify({"error": "invalid or unknown patientId"}), 400
-    fb_read.save_intake(pid, body)
-    return jsonify({"ok": True, "patientId": pid})
+    body = request.get_json(force=True, silent=True) or {}
+    visit = fb_read.add_visit(pid, body)
+    return jsonify({"ok": True, "patientId": pid, "visit": visit})
+
+
+# ── 환자 정보 직접 수정(info/vitals 부분 갱신) ────────────────────────────────
+@app.put("/api/patients/<pid>")
+def update_patient(pid):
+    if not _PID_RE.match(pid) or patient_store.get_patient(pid) is None:
+        return jsonify({"error": "invalid or unknown patientId"}), 400
+    body = request.get_json(force=True, silent=True) or {}
+    fb_read.update_patient(pid, body.get("info"), body.get("vitals"))
+    return jsonify(patient_store.get_patient(pid))
 
 
 # ── OCR ─────────────────────────────────────────────────────────────────────
@@ -163,6 +172,22 @@ def api_ocr():
     except Exception:
         pass   # OCR 표시는 유지, RTDB 기록 실패는 비치명
     return jsonify({"text": text})
+
+
+# ── 로봇 명령 하달 (mission_pool, ROS 노드 통신 없음) ─────────────────────────
+@app.post("/api/robots/<ns>/missions")
+def robot_mission(ns):
+    body = request.get_json(force=True, silent=True) or {}
+    try:
+        mid, mission = fb_read.push_mission(ns, body.get("action"), body.get("params"))
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "id": mid, "mission": mission})
+
+
+@app.get("/api/robots/<ns>/missions")
+def robot_missions(ns):
+    return jsonify({"missions": fb_read.get_missions(ns)})
 
 
 # ── 병실→pose + 맵 ───────────────────────────────────────────────────────────

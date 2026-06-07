@@ -5,6 +5,8 @@ After=network.target
 [Service]
 User=rokey
 WorkingDirectory=/home/rokey/MediCart/web/backend
+# NS(ROBOT_NAMESPACE)는 robot.env(MediCart standalone 복사본), 그 외 시크릿은 .env.
+EnvironmentFile=/home/rokey/MediCart/common/robot.env
 EnvironmentFile=/home/rokey/MediCart/web/backend/.env
 ExecStart=/home/rokey/MediCart/web/backend/venv/bin/python app.py
 Restart=on-failure

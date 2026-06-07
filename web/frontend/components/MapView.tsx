@@ -2,10 +2,10 @@
 import { useEffect, useRef, useState } from "react";
 import { API_BASE, AmrSnapshot, getAmrs, getRooms, saveMode, getMapMeta, MapMeta } from "@/lib/api";
 import { modeOf } from "@/lib/modes";
-import { PRIMARY_NS } from "@/lib/config";
+import { PRIMARY_NS, SECONDARY_NS } from "@/lib/config";
 
 type Rooms = { rooms?: Record<string, { x: number; y: number; yaw?: number; patient?: string }> };
-const AMR_COLOR: Record<string, string> = { robot3: "#0ca39a", robot6: "#0ca39a", amr2: "#2f74e0" };
+const AMR_COLOR: Record<string, string> = { robot3: "#0ca39a", robot6: "#2f74e0" };
 
 export default function MapView() {
   const [amrs, setAmrs] = useState<Record<string, AmrSnapshot>>({});
@@ -119,7 +119,7 @@ export default function MapView() {
     });
   }, [amrs, rooms, mapMeta, mapReady]);
 
-  const sources = Object.keys(amrs).length ? Object.keys(amrs) : [PRIMARY_NS, "amr2"];
+  const sources = Object.keys(amrs).length ? Object.keys(amrs) : [PRIMARY_NS, SECONDARY_NS];
 
   return (
     <div className="p-7">

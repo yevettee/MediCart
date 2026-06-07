@@ -8,7 +8,9 @@
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
+  <depend>std_msgs</depend>
   <depend>medi_interfaces</depend>
+  <!-- firebase-admin 은 pip 설치 필요(rosdep 키 없음): pip install firebase-admin -->
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

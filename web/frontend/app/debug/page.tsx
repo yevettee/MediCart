@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { API_BASE, getAmrs, AmrSnapshot } from "@/lib/api";
-import { PRIMARY_NS } from "@/lib/config";
+import { PRIMARY_NS, SECONDARY_NS } from "@/lib/config";
 import UPlotChart from "@/components/UPlotChart";
 
-const SOURCES = [PRIMARY_NS, "amr2"];
-const COLOR: Record<string, string> = { robot3: "#0ca39a", robot6: "#0ca39a", amr2: "#2f74e0" };
+const SOURCES = [PRIMARY_NS, SECONDARY_NS];
+const COLOR: Record<string, string> = { robot3: "#0ca39a", robot6: "#2f74e0" };
 const CAP = 600; // 롤링 버퍼 상한(≈ 10fps·1분)
 
 type Buf = { t: number[]; batt: number[]; lin: number[]; ang: number[]; msgTimes: number[] };
@@ -16,7 +16,7 @@ type Alert = { source?: string; class?: string; distance?: number; confidence?: 
 
 export default function DebugPage() {
   const snaps = useRef<Record<string, AmrSnapshot>>({});
-  const bufs = useRef<Record<string, Buf>>({ [PRIMARY_NS]: newBuf(), amr2: newBuf() });
+  const bufs = useRef<Record<string, Buf>>({ [PRIMARY_NS]: newBuf(), [SECONDARY_NS]: newBuf() });
   const [, setTick] = useState(0);
   const [live, setLive] = useState(false);
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -93,7 +93,7 @@ function AmrPanel({ src, snap, buf }: { src: string; snap: AmrSnapshot; buf: Buf
         <div className="flex items-center gap-2.5">
           <span className="w-3 h-3 rounded-full" style={{ background: col }} />
           <span className="font-bold text-[15px]">{src.toUpperCase()}</span>
-          <span className="mono text-[11px] text-ink-3">{src}:state</span>
+          <span className="mono text-[11px] text-ink-3">/{src}</span>
         </div>
         <span className={`pill ${online ? "bg-green-soft text-green" : "bg-red-soft text-red"}`}>
           <span className={`dot ${online ? "bg-green" : "bg-red"}`} /> {online ? "LIVE" : "STALE"}

@@ -58,8 +58,10 @@ export type AmrSnapshot = {
   vel?: { lin: number; ang: number };
   battery?: { pct: number; voltage: number };
   dock?: { is_docked: boolean };
+  imu?: { yaw_rate: number };
   mode?: string;
   state?: string;
+  online?: boolean;
   scan?: { angle_min: number; angle_inc: number; range_max: number; ranges: (number | null)[] };
   stamp?: number;
 } | null;
@@ -81,14 +83,43 @@ export async function saveMode(action: "start" | "stop" | "clear", mode: string,
 
 export type MapMeta = { available: boolean; resolution?: number; origin?: number[] };
 
-export async function saveIntake(payload: Record<string, unknown>) {
-  const r = await fetch(`${API_BASE}/api/intake`, {
+// 문진 입력 → 새 외래방문 기록 추가(visits[0]에 prepend, 최근 생체징후도 갱신)
+export async function addVisit(pid: string, data: Record<string, unknown>) {
+  const r = await fetch(`${API_BASE}/api/patients/${pid}/visits`, {
     method: "POST", credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(data),
   });
   return r.json();
 }
+
+// 환자 정보 직접 수정(info/vitals 부분 갱신) → 갱신된 환자 반환
+export async function updatePatient(
+  pid: string,
+  patch: { info?: Record<string, unknown>; vitals?: Record<string, unknown> },
+): Promise<Patient> {
+  const r = await fetch(`${API_BASE}/api/patients/${pid}`, {
+    method: "PUT", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!r.ok) throw new Error(`PUT /api/patients/${pid} → ${r.status}`);
+  return r.json();
+}
+
+// ── 로봇 명령 하달 (mission_pool) ──────────────────────────────────────────
+export type Mission = { id: string; action: string; params?: Record<string, unknown>; status: string; ts: number };
+
+export async function pushMission(ns: string, action: string) {
+  const r = await fetch(`${API_BASE}/api/robots/${ns}/missions`, {
+    method: "POST", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action }),
+  });
+  return r.json() as Promise<{ ok: boolean; id?: string; error?: string }>;
+}
+
+export const getMissions = (ns: string) => getJSON<{ missions: Mission[] }>(`/api/robots/${ns}/missions`);
 
 export async function ocr(blob: Blob): Promise<{ text: string }> {
   const fd = new FormData();

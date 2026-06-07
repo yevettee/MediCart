@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 const NAV = [
   { href: "/", label: "홈", sub: "메뉴", icon: HomeIcon, exact: true },
   { href: "/map", label: "실시간 관제", sub: "AMR 위치·모드", icon: MapIcon },
+  { href: "/control", label: "로봇 제어", sub: "명령 하달", icon: ControlIcon },
   { href: "/patients", label: "환자 정보", sub: "회진 보조", icon: PatientIcon },
   { href: "/intake", label: "문진표", sub: "작성·저장", icon: FormIcon },
   { href: "/ocr", label: "약품 OCR", sub: "텍스트 인식", icon: FormIcon },
@@ -105,6 +106,10 @@ function HomeIcon() {
 function MapIcon() {
   return (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round">
     <path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z" /><path d="M9 4v14M15 6v14" /></svg>);
+}
+function ControlIcon() {
+  return (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="8" /><path d="M12 8v4l2.5 2.5" /></svg>);
 }
 function PatientIcon() {
   return (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
