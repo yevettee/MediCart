@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
-"""Mission manager node — orchestrates navigation, docking, and scan workflows.
+"""mission_manager — 모드 중재 허브 + mission_pool 명령 실행.
 
-Selects a mission flow from the ``mission_type`` parameter (``patrol`` for the
-autonomous patrol + interview scenario, ``medication`` for nurse-following
-medication assistance) and drives the shared StateMachine. The patrol scenario
-is kicked off through the ``/robot6/start_patrol`` service.
-
-또한 db_node 가 보내는 시스템 명령(/{ns}/mission_request, mission_pool 유래)을 받아
-MissionExecutor 로 실행하고 /{ns}/mission_feedback 으로 진행/결과를 보고한다
-(dock/undock/ros_restart/reboot/shutdown — bashrc 명령 참고).
+db_node 가 보내는 명령(/{ns}/mission_request, mission_pool 유래)을 2-lane 라우팅:
+  - 시스템 액션(dock/undock/ros_restart/reboot/shutdown) → MissionExecutor(bashrc 참고)
+  - 모드 액션(start/stop/clear + mode) → ModeArbiter(우선순위 선점/복귀·cmd_vel 게이트)
+/{ns}/mission_feedback 으로 결과 보고. (구 StartPatrol/state_machine 경로는 모드 체계로 대체·제거.)
 """
 import json
 import math
@@ -21,16 +17,10 @@ from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 
-from medi_interfaces.srv import StartPatrol
-
 from .mission_executor import MissionExecutor
 from .mode_arbiter import ModeArbiter
-from .state_machine import MISSION_MEDICATION, MISSION_PATROL, StateMachine
 from .system_commands import SYSTEM_ACTIONS
 
-
-# Service that starts the autonomous patrol mission.
-START_PATROL_SERVICE = '/robot6/start_patrol'
 
 # 모드 레지스트리 — 이름: actuation. 외부 노드가 /{ns}/mode/<name>/* 계약 따름.
 MODE_REGISTRY = {
@@ -41,18 +31,10 @@ MODE_ACTIONS = ("start", "stop", "clear")
 
 
 class MissionManagerNode(Node):
-    """Central state machine coordinating robot missions."""
+    """모드 중재 허브 + 시스템 명령 실행 노드."""
 
     def __init__(self):
-        """Set up the state machine for the configured mission type."""
         super().__init__('mission_manager_node')
-
-        self.declare_parameter('mission_type', MISSION_MEDICATION)
-        mission_type = self.get_parameter('mission_type').value
-        self._sm = StateMachine(mission_type=mission_type)
-
-        self._start_patrol_srv = self.create_service(
-            StartPatrol, START_PATROL_SERVICE, self._on_start_patrol)
 
         # ── mission_pool 시스템 명령 경로 ────────────────────────────────
         self.declare_parameter('namespace', os.environ.get('ROBOT_NAMESPACE', 'robot6'))
@@ -85,8 +67,8 @@ class MissionManagerNode(Node):
         self.create_timer(1.0 / hz, self._control_tick)
 
         self.get_logger().info(
-            'mission_manager_node started (mission_type={}, ns={}, 모드={} @ {:.0f}Hz)'
-            .format(mission_type, ns, list(MODE_REGISTRY), hz))
+            'mission_manager_node started (ns={}, 모드={} @ {:.0f}Hz)'
+            .format(ns, list(MODE_REGISTRY), hz))
 
     # ── mission_request 2-lane 라우팅 (시스템 액션 / 모드 액션) ───────────
     def _on_mission_request(self, msg):
@@ -137,24 +119,6 @@ class MissionManagerNode(Node):
     def _publish_cmd(self, lin, ang):
         tw = Twist(); tw.linear.x = float(lin); tw.angular.z = float(ang)
         self._cmd_pub.publish(tw)
-
-    def _on_start_patrol(self, request, response):
-        """Begin the patrol mission by leaving IDLE through UNDOCK."""
-        del request  # StartPatrol has an empty request.
-        if self._sm.mission_type != MISSION_PATROL:
-            response.success = False
-            response.message = 'mission_type is not "patrol"'
-            return response
-        if self._sm.state != 'IDLE':
-            response.success = False
-            response.message = 'patrol already running (state={})'.format(self._sm.state)
-            return response
-
-        self._sm.transition('UNDOCK')
-        response.success = True
-        response.message = 'patrol started'
-        self.get_logger().info('patrol started; state={}'.format(self._sm.state))
-        return response
 
 
 def main(args=None):

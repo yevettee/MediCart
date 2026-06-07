@@ -19,8 +19,7 @@ from std_msgs.msg import String
 _LATCHED_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                           durability=DurabilityPolicy.TRANSIENT_LOCAL)
 
-from medi_interfaces.msg import TargetBBox
-from medi_interfaces.srv import StartTracking
+from std_srvs.srv import Trigger
 
 from .perception import PersonTracker
 from .follow_control import FollowParams, FollowFSM
@@ -53,9 +52,10 @@ class TrackerNode(Node):
 
         self._cmd_pub = self.create_publisher(Twist, f"/{ns}/mode/{MODE}/cmd_vel", 10)
         self._status_pub = self.create_publisher(String, f"/{ns}/mode/{MODE}/status", 10)
-        self._target_pub = self.create_publisher(TargetBBox, "/nurse_tracker/target", 10)
+        # 타깃 정보는 std_msgs/String(JSON) 으로 발행(medi_interfaces 제거 — 커스텀 msg 불요).
+        self._target_pub = self.create_publisher(String, "/nurse_tracker/target", 10)
         self.create_subscription(String, f"/{ns}/mode/{MODE}/set", self._on_set, _LATCHED_QOS)
-        self.create_service(StartTracking, f"/{ns}/start_tracking", self._on_start_tracking)
+        self.create_service(Trigger, f"/{ns}/start_tracking", self._on_start_tracking)
 
         hz = float(self.get_parameter("control_hz").value)
         self.create_timer(1.0 / hz, self._tick)
@@ -93,10 +93,11 @@ class TrackerNode(Node):
             {"state": "running", "detail": detail, "ts": int(time.time() * 1000)})
         self._status_pub.publish(s)
         if target is not None and target.detected:
-            tb = TargetBBox()
-            tb.header.stamp = self.get_clock().now().to_msg()
-            tb.tracking_id = int(target.track_id)
-            tb.depth = float(target.distance)
+            tb = String()
+            tb.data = json.dumps({"tracking_id": int(target.track_id),
+                                  "distance": round(float(target.distance), 3),
+                                  "bearing": round(float(target.bearing), 4),
+                                  "ts": int(time.time() * 1000)})
             self._target_pub.publish(tb)
 
 
