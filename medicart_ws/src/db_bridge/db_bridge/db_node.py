@@ -127,8 +127,10 @@ class DbNode(Node):
                             {'status': 'running', 'updated_ts': _now_ms()})
         except Exception as exc:                       # noqa: BLE001
             self.get_logger().error(f'[db_node] status=running 기록 실패 id={mid}: {exc}')
-        self._publish(self._req_pub, {'id': mid, 'action': action,
-                                      'params': mission.get('params', {})})
+        req = {'id': mid, 'action': action, 'params': mission.get('params', {})}
+        if mission.get('mode'):                       # 모드 액션(start/stop)일 때 mode 전달
+            req['mode'] = mission.get('mode')
+        self._publish(self._req_pub, req)
         self._last_event = f'start {action}({mid})'
         self.get_logger().info(
             f'[db_node] ▶ START id={mid} action={action} → mission_request 발행')

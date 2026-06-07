@@ -108,13 +108,14 @@ export async function updatePatient(
 }
 
 // ── 로봇 명령 하달 (mission_pool) ──────────────────────────────────────────
-export type Mission = { id: string; action: string; params?: Record<string, unknown>; status: string; ts: number };
+export type Mission = { id: string; action: string; mode?: string; params?: Record<string, unknown>; status: string; ts: number };
 
-export async function pushMission(ns: string, action: string) {
+// 시스템 액션(dock/undock…)은 mode 생략, 모드 액션(start/stop)은 mode 지정, clear는 mode 불요.
+export async function pushMission(ns: string, action: string, mode?: string) {
   const r = await fetch(`${API_BASE}/api/robots/${ns}/missions`, {
     method: "POST", credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action }),
+    body: JSON.stringify(mode ? { action, mode } : { action }),
   });
   return r.json() as Promise<{ ok: boolean; id?: string; error?: string }>;
 }

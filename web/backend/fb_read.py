@@ -132,18 +132,31 @@ def vitals_from_visit(visit):
 
 # ── mission_pool (웹→로봇 DB 명령 하달, ROS 노드 통신 없음) ────────────────────
 ROBOT_NAMESPACES = ("robot3", "robot6")
-MISSION_ACTIONS = ("shutdown", "reboot", "ros_restart", "dock", "undock")
+MISSION_ACTIONS = ("shutdown", "reboot", "ros_restart", "dock", "undock")   # 시스템(momentary)
+MODE_ACTIONS = ("start", "stop", "clear")                                   # 모드 중재(continuous)
+MODE_NAMES = ("round", "patrol", "errand", "guide", "intake")               # mission_manager 모드
 
 
 def valid_robot_ns(ns):
     return ns in ROBOT_NAMESPACES
 
 
-def mission_payload(action, params, ts):
-    """{ns}/mission_pool 에 push 될 명령(화이트리스트 검증)."""
-    if action not in MISSION_ACTIONS:
-        raise ValueError("invalid action")
-    return {"action": action, "params": params or {}, "status": "pending", "ts": int(ts)}
+def mission_payload(action, params, ts, mode=None):
+    """{ns}/mission_pool 에 push 될 명령(화이트리스트 검증).
+
+    두 종류: 시스템 액션(dock/undock/…, mode 없음) 또는 모드 액션(start/stop/clear + mode).
+    clear 는 mode 불요(전체 모드 해제).
+    """
+    if action in MISSION_ACTIONS:
+        return {"action": action, "params": params or {}, "status": "pending", "ts": int(ts)}
+    if action in MODE_ACTIONS:
+        if action != "clear" and mode not in MODE_NAMES:
+            raise ValueError("invalid mode")
+        out = {"action": action, "params": params or {}, "status": "pending", "ts": int(ts)}
+        if mode:
+            out["mode"] = mode
+        return out
+    raise ValueError("invalid action")
 
 
 def list_missions(pool_raw):
@@ -313,11 +326,11 @@ def update_patient(pid, info=None, vitals=None):
         db.reference(f"patients/{pid}/vitals").update(sanitize_fields(vitals))
 
 
-def push_mission(ns, action, params=None):
+def push_mission(ns, action, params=None, mode=None):
     """웹 명령을 {ns}/mission_pool 뒤에 push(시간순 key). 로봇측 리스너가 읽어 실행."""
     if not valid_robot_ns(ns):
         raise ValueError("invalid robot")
-    payload = mission_payload(action, params, int(time.time() * 1000))
+    payload = mission_payload(action, params, int(time.time() * 1000), mode)
     ref = _init().reference(f"{ns}/mission_pool").push(payload)
     return ref.key, payload
 

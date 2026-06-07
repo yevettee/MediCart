@@ -1,6 +1,0 @@
-string patient_id
----
-bool success
-PatientInfo patient
-MedicineInfo[] medicines
-string message

@@ -11,20 +11,33 @@ MissionExecutor 로 실행하고 /{ns}/mission_feedback 으로 진행/결과를 
 (dock/undock/ros_restart/reboot/shutdown — bashrc 명령 참고).
 """
 import json
+import math
 import os
+import time
 
 import rclpy
 from rclpy.node import Node
+from geometry_msgs.msg import Twist
+from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 
 from medi_interfaces.srv import StartPatrol
 
 from .mission_executor import MissionExecutor
+from .mode_arbiter import ModeArbiter
 from .state_machine import MISSION_MEDICATION, MISSION_PATROL, StateMachine
+from .system_commands import SYSTEM_ACTIONS
 
 
 # Service that starts the autonomous patrol mission.
 START_PATROL_SERVICE = '/robot6/start_patrol'
+
+# 모드 레지스트리 — 이름: actuation. 외부 노드가 /{ns}/mode/<name>/* 계약 따름.
+MODE_REGISTRY = {
+    "round": "reactive",   # 회진/추종 (nurse_tracker)
+    "patrol": "nav", "errand": "nav", "guide": "nav", "intake": "nav",
+}
+MODE_ACTIONS = ("start", "stop", "clear")
 
 
 class MissionManagerNode(Node):
@@ -59,11 +72,23 @@ class MissionManagerNode(Node):
                 '[mission_manager] DISCOVERY_IP 미설정 — ros_restart/reboot/shutdown(ssh) '
                 '불가. robot.env 를 source 후 실행하세요.')
 
-        self.get_logger().info(
-            'mission_manager_node started (mission_type={}, ns={}, mission_request 구독)'
-            .format(mission_type, ns))
+        # ── 모드 중재 허브 ───────────────────────────────────────────────
+        self.declare_parameter('control_hz', 10.0)
+        self.declare_parameter('front_cone_deg', 30.0)
+        self._front_cone = math.radians(float(self.get_parameter('front_cone_deg').value))
+        self._forward_clearance = None
+        self._arbiter = ModeArbiter(self, ns, MODE_REGISTRY, self.get_logger())
+        self._cmd_pub = self.create_publisher(Twist, f'/{ns}/cmd_vel', 10)
+        self._robot_mode_pub = self.create_publisher(String, f'/{ns}/robot_mode', 10)
+        self.create_subscription(LaserScan, f'/{ns}/scan', self._on_scan, 10)
+        hz = float(self.get_parameter('control_hz').value)
+        self.create_timer(1.0 / hz, self._control_tick)
 
-    # ── mission_pool 시스템 명령 ─────────────────────────────────────────
+        self.get_logger().info(
+            'mission_manager_node started (mission_type={}, ns={}, 모드={} @ {:.0f}Hz)'
+            .format(mission_type, ns, list(MODE_REGISTRY), hz))
+
+    # ── mission_request 2-lane 라우팅 (시스템 액션 / 모드 액션) ───────────
     def _on_mission_request(self, msg):
         try:
             req = json.loads(msg.data)
@@ -71,12 +96,47 @@ class MissionManagerNode(Node):
             self.get_logger().warn(
                 '[mission_manager] mission_request 파싱 실패: {} raw={!r}'.format(exc, msg.data))
             return
-        self._executor.handle(req)
+        action = req.get('action')
+        if action in SYSTEM_ACTIONS:                 # dock/undock/ros_restart/reboot/shutdown
+            self._executor.handle(req)
+        elif action in MODE_ACTIONS:                  # start/stop/clear (+mode)
+            ok, detail = self._arbiter.apply(action, req.get('mode'), req.get('params'))
+            self._publish_feedback({'id': req.get('id'),
+                                    'status': 'done' if ok else 'failed',
+                                    'detail': detail, 'ts': int(time.time() * 1000)})
+        else:
+            self._publish_feedback({'id': req.get('id'), 'status': 'failed',
+                                    'detail': 'unknown action: {}'.format(action),
+                                    'ts': int(time.time() * 1000)})
 
     def _publish_feedback(self, payload):
         msg = String()
         msg.data = json.dumps(payload, ensure_ascii=False)
         self._feedback_pub.publish(msg)
+
+    # ── 안전 입력 + 제어 루프 ────────────────────────────────────────────
+    def _on_scan(self, scan):
+        front = None
+        a = scan.angle_min
+        for r in scan.ranges:
+            if math.isfinite(r) and r > 0.0 and abs(a) <= self._front_cone:
+                front = r if front is None else min(front, r)
+            a += scan.angle_increment
+        self._forward_clearance = front
+
+    def _control_tick(self):
+        mode, twist = self._arbiter.tick(time.monotonic(), self._forward_clearance, None)
+        if twist is not None:                 # REACTIVE 활성 → 게이트된 속도
+            self._publish_cmd(twist[0], twist[1])
+        elif mode == 'idle':                  # 대기 → 정지
+            self._publish_cmd(0.0, 0.0)
+        # NAV 활성 → 미발행(Nav2 소유)
+        m = String(); m.data = mode
+        self._robot_mode_pub.publish(m)
+
+    def _publish_cmd(self, lin, ang):
+        tw = Twist(); tw.linear.x = float(lin); tw.angular.z = float(ang)
+        self._cmd_pub.publish(tw)
 
     def _on_start_patrol(self, request, response):
         """Begin the patrol mission by leaving IDLE through UNDOCK."""

@@ -125,6 +125,22 @@ def test_mission_payload_whitelist():
             mission_payload(bad, None, 1)
 
 
+def test_mission_payload_mode_actions():
+    from fb_read import mission_payload
+    # 모드 액션은 mode 포함
+    m = mission_payload("start", None, 5, mode="round")
+    assert m == {"action": "start", "params": {}, "status": "pending", "ts": 5, "mode": "round"}
+    assert mission_payload("stop", None, 5, mode="patrol")["mode"] == "patrol"
+    # clear 는 mode 불요
+    c = mission_payload("clear", None, 5)
+    assert c["action"] == "clear" and "mode" not in c
+    # start/stop 에 잘못된/없는 mode → 거부
+    with pytest.raises(ValueError):
+        mission_payload("start", None, 5, mode="bogus")
+    with pytest.raises(ValueError):
+        mission_payload("start", None, 5)
+
+
 def test_valid_robot_ns():
     from fb_read import valid_robot_ns
     assert valid_robot_ns("robot3") and valid_robot_ns("robot6")

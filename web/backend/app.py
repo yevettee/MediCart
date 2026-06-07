@@ -179,7 +179,8 @@ def api_ocr():
 def robot_mission(ns):
     body = request.get_json(force=True, silent=True) or {}
     try:
-        mid, mission = fb_read.push_mission(ns, body.get("action"), body.get("params"))
+        mid, mission = fb_read.push_mission(
+            ns, body.get("action"), body.get("params"), body.get("mode"))
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     return jsonify({"ok": True, "id": mid, "mission": mission})
