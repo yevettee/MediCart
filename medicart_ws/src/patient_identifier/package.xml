@@ -1,19 +1,16 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>simulation</name>
+  <name>patient_identifier</name>
   <version>0.1.0</version>
-  <description>Gazebo simulation support for MediCart</description>
+  <description>Patient identification via YOLO person detection, QR scanning and DB validation</description>
   <maintainer email="dev@medicart.local">MediCart Team</maintainer>
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
-
-  <!-- 시뮬 런타임 의존 (turtlebot4_ws 에 설치되어 있어야 하며, 소스는 수정하지 않음) -->
-  <exec_depend>turtlebot4_ignition_bringup</exec_depend>
-  <exec_depend>turtlebot4_navigation</exec_depend>
-  <exec_depend>ros_gz_sim</exec_depend>
-  <exec_depend>nav2_map_server</exec_depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>medi_interfaces</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

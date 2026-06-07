@@ -12,7 +12,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Web dashboard node for sending Nav2 goals from a map UI."""
+"""Dashboard node — command interface for MediCart operators.
+
+Hosts the web dashboard for robot6 navigation, docking, RGB-D monitoring,
+capture storage, and patrol-mode operator status:
+
+* a ``/robot6/start_patrol`` client behind the "start patrol" button
+* live patrol progress from ``/robot6/patient_identified``
+* operator pop-ups for failure statuses (no_qr / mismatch / db_error)
+
+Patrol state is kept in GuiPanel; the web UI is served by this node.
+"""
 
 from __future__ import annotations
 
@@ -45,6 +55,19 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CompressedImage
+
+from medi_interfaces.msg import PatientIdentified
+from medi_interfaces.srv import StartPatrol
+
+from .gui_panel import GuiPanel
+
+
+# Topics / services under the /robot6 namespace.
+START_PATROL_SERVICE = '/robot6/start_patrol'
+IDENTIFIED_TOPIC = '/robot6/patient_identified'
+
+# Identification statuses that require operator attention.
+ALERT_STATUSES = ('no_qr', 'mismatch', 'db_error')
 
 
 DEFAULT_TARGETS = (
@@ -348,11 +371,11 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             return False
         return True
 
-
 class DashboardNode(Node):
     """Publishes operator navigation goals and hosts the dashboard UI."""
 
     def __init__(self):
+        """Set up the patrol controls, displays and the view model."""
         super().__init__('dashboard_node')
 
         self.declare_parameter('host', '0.0.0.0')
@@ -477,6 +500,17 @@ class DashboardNode(Node):
             slop=0.08,
         )
         self._rgbd_sync.registerCallback(self._handle_rgbd)
+        self.panel = GuiPanel()
+        self._start_patrol_client = self.create_client(
+            StartPatrol,
+            START_PATROL_SERVICE,
+        )
+        self._identified_sub = self.create_subscription(
+            PatientIdentified,
+            IDENTIFIED_TOPIC,
+            self._on_identified,
+            10,
+        )
 
         self._map_config = self._load_map_config()
         self._http_server: DashboardHttpServer | None = None
@@ -1445,8 +1479,29 @@ class DashboardNode(Node):
         height = int(next_token())
         return width, height
 
+    def start_patrol(self):
+        """Invoke the start-patrol service (wired to the start button)."""
+        if not self._start_patrol_client.wait_for_service(timeout_sec=2.0):
+            self.get_logger().error('start_patrol service unavailable')
+            return None
+        self.panel.start_patrol(self.panel.total_rooms)
+        return self._start_patrol_client.call_async(StartPatrol.Request())
+
+    def _on_identified(self, msg):
+        """Advance patrol progress and pop up failure statuses."""
+        self.panel.update_progress(self.panel.current_room_index + 1)
+        self.get_logger().info('patrol progress {} (status={})'.format(
+            self.panel.progress_text(), msg.status))
+
+        if msg.status in ALERT_STATUSES:
+            text = 'Room {} [{}] patient {}'.format(
+                msg.room, msg.status, msg.patient_id or '?')
+            self.panel.push_alert(text)
+            self.get_logger().warn('ATTENTION: {}'.format(text))
+
 
 def main(args=None):
+    """Spin the dashboard node."""
     rclpy.init(args=args)
     node = DashboardNode()
     try:
