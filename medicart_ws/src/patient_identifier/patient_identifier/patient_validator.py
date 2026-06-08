@@ -1,8 +1,9 @@
 """Validate a scanned patient against the prescription DB.
 
-Calls the db_bridge ``/robot6/db/get_prescription`` service with the
+Calls the db_bridge ``/{ns}/db/get_prescription`` service with the
 patient_id extracted from the QR code, then checks that the room recorded in
-the DB matches the room the robot is currently visiting.
+the DB matches the room the robot is currently visiting. The service name is
+passed in from the node (built from its namespace parameter).
 """
 
 import rclpy
@@ -10,7 +11,7 @@ import rclpy
 from medi_interfaces.srv import GetPrescription
 
 
-# Service exposed by db_bridge under the /robot6 namespace.
+# Fallback when no service name is supplied.
 GET_PRESCRIPTION_SERVICE = '/robot6/db/get_prescription'
 
 
@@ -33,12 +34,13 @@ class ValidationResult:
 class PatientValidator:
     """Look up a patient in the DB and verify the visited room."""
 
-    def __init__(self, node, timeout_sec=5.0, callback_group=None):
+    def __init__(self, node, service_name=GET_PRESCRIPTION_SERVICE,
+                 timeout_sec=5.0, callback_group=None):
         """Create the service client on the owning node."""
         self._node = node
         self._timeout_sec = timeout_sec
         self._client = node.create_client(
-            GetPrescription, GET_PRESCRIPTION_SERVICE, callback_group=callback_group)
+            GetPrescription, service_name, callback_group=callback_group)
 
     def validate(self, patient_id, current_room):
         """Validate ``patient_id`` against the DB for ``current_room``.

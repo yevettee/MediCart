@@ -3,12 +3,13 @@
 <package format="3">
   <name>db_bridge</name>
   <version>0.1.0</version>
-  <description>Firebase Firestore bridge for MediCart data layer</description>
+  <description>Firebase Realtime Database (RTDB) bridge for MediCart data layer</description>
   <maintainer email="dev@medicart.local">MediCart Team</maintainer>
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
+  <depend>medi_interfaces</depend>
   <!-- firebase-admin 은 pip 설치 필요(rosdep 키 없음): pip install firebase-admin -->
 
   <test_depend>ament_copyright</test_depend>
