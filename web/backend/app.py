@@ -191,6 +191,12 @@ def robot_missions(ns):
     return jsonify({"missions": fb_read.get_missions(ns)})
 
 
+# ── 순회 대상 ────────────────────────────────────────────────────────────────
+@app.get("/api/targets")
+def targets():
+    return jsonify({"targets": fb_read.get_targets()})
+
+
 # ── 병실→pose + 맵 ───────────────────────────────────────────────────────────
 @app.get("/api/rooms")
 def rooms():
@@ -221,6 +227,12 @@ def map_png():
         return send_file(MAP_PNG, mimetype="image/png")
     return jsonify({"error": "no map"}), 404
 
+
+try:
+    if fb_read.seed_targets():
+        print("[app] RTDB targets 시드 완료")
+except Exception as exc:        # noqa: BLE001 — 시드 실패해도 서비스는 계속
+    print(f"[app] targets 시드 건너뜀: {exc}")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), threaded=True)
