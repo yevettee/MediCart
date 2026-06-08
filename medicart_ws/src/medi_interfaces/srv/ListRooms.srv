@@ -1,0 +1,11 @@
+# RTDB /rooms waypoint 목록 조회. filter='bed' 면 병상만(home/nurse_station/pharmacy 제외),
+# '' 또는 'all' 이면 전체. 결과는 room_ids 와 같은 인덱스의 병렬 배열로 반환.
+string filter
+---
+bool success
+string[] room_ids
+float64[] xs
+float64[] ys
+float64[] yaws
+string[] patient_ids
+string message

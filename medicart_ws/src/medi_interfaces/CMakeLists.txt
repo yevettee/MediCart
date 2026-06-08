@@ -27,6 +27,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GetPrescription.srv"
   "srv/VerifyMedicine.srv"
   "srv/UpdateVisitStatus.srv"
+  "srv/ListRooms.srv"
   DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
 )
 

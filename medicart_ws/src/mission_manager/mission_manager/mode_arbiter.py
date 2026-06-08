@@ -61,6 +61,11 @@ class ModeProxy:
     def status_state(self):
         return (self._status or {}).get("state")
 
+    def reset_status(self):
+        """직전 실행의 캐시 status 초기화(재시작 시 stale done/failed 오인 방지)."""
+        self._status = None
+        self._status_t = 0.0
+
     def status_age(self, now):
         return (now - self._status_t) if self._status_t else float("inf")
 
@@ -88,6 +93,21 @@ class ModeArbiter:
     @property
     def active(self):
         return sorted(self._active)
+
+    def is_active(self, name):
+        """모드가 활성 요청 집합에 있는지(완료/lost 시 arbiter 가 제거)."""
+        return name in self._active
+
+    def mode_state(self, name):
+        """모드 노드가 마지막으로 발행한 status state('running'|'done'|'failed'|None)."""
+        px = self._proxies.get(name)
+        return px.status_state() if px is not None else None
+
+    def reset_status(self, name):
+        """모드 proxy 의 캐시 status 초기화(재기동 전 stale 값 제거)."""
+        px = self._proxies.get(name)
+        if px is not None:
+            px.reset_status()
 
     def apply(self, action, mode=None, params=None):
         """모드 요청 반영. 반환 (ok, detail)."""

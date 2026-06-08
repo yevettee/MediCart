@@ -18,6 +18,7 @@ from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 
 from .mission_executor import MissionExecutor
+from .mission_sequencer import MissionSequencer, SEQUENCE_ACTION
 from .mode_arbiter import ModeArbiter
 from .system_commands import SYSTEM_ACTIONS
 
@@ -28,6 +29,7 @@ MODE_REGISTRY = {
     "patrol": "nav", "errand": "nav", "guide": "nav", "intake": "nav",
 }
 MODE_ACTIONS = ("start", "stop", "clear")
+SEQUENCE_ACTIONS = (SEQUENCE_ACTION,)   # patrol_mission: undock→patrol→dock 시퀀스
 
 
 class MissionManagerNode(Node):
@@ -60,6 +62,9 @@ class MissionManagerNode(Node):
         self._front_cone = math.radians(float(self.get_parameter('front_cone_deg').value))
         self._forward_clearance = None
         self._arbiter = ModeArbiter(self, ns, MODE_REGISTRY, self.get_logger())
+        # 시나리오 A 시퀀서 — patrol_mission(undock→patrol→dock) 오케스트레이션.
+        self._sequencer = MissionSequencer(
+            self._executor, self._arbiter, self._publish_feedback, self.get_logger())
         self._cmd_pub = self.create_publisher(Twist, f'/{ns}/cmd_vel', 10)
         self._robot_mode_pub = self.create_publisher(String, f'/{ns}/robot_mode', 10)
         self.create_subscription(LaserScan, f'/{ns}/scan', self._on_scan, 10)
@@ -79,7 +84,9 @@ class MissionManagerNode(Node):
                 '[mission_manager] mission_request 파싱 실패: {} raw={!r}'.format(exc, msg.data))
             return
         action = req.get('action')
-        if action in SYSTEM_ACTIONS:                 # dock/undock/ros_restart/reboot/shutdown
+        if action in SEQUENCE_ACTIONS:                # patrol_mission(undock→patrol→dock)
+            self._sequencer.start(req.get('id'), req.get('params'))
+        elif action in SYSTEM_ACTIONS:               # dock/undock/ros_restart/reboot/shutdown
             self._executor.handle(req)
         elif action in MODE_ACTIONS:                  # start/stop/clear (+mode)
             ok, detail = self._arbiter.apply(action, req.get('mode'), req.get('params'))
@@ -107,11 +114,13 @@ class MissionManagerNode(Node):
         self._forward_clearance = front
 
     def _control_tick(self):
-        mode, twist = self._arbiter.tick(time.monotonic(), self._forward_clearance, None)
+        now = time.monotonic()
+        self._sequencer.tick(now)             # 시퀀스 단계 진행(undock→patrol→dock)
+        mode, twist = self._arbiter.tick(now, self._forward_clearance, None)
         if twist is not None:                 # REACTIVE 활성 → 게이트된 속도
             self._publish_cmd(twist[0], twist[1])
-        elif mode == 'idle':                  # 대기 → 정지
-            self._publish_cmd(0.0, 0.0)
+        elif mode == 'idle' and not self._sequencer.owns_base():
+            self._publish_cmd(0.0, 0.0)       # 대기 → 정지 (dock/undock 중엔 Create3 소유)
         # NAV 활성 → 미발행(Nav2 소유)
         m = String(); m.data = mode
         self._robot_mode_pub.publish(m)
