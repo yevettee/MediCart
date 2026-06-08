@@ -9,6 +9,7 @@ const NAV = [
   { href: "/patients", label: "환자 정보", sub: "회진 보조", icon: PatientIcon },
   { href: "/intake", label: "문진표", sub: "작성·저장", icon: FormIcon },
   { href: "/ocr", label: "처치실", sub: "투약 준비·검증", icon: FormIcon },
+  { href: "/qr", label: "QR 스캔", sub: "환자 문진표 호출", icon: QrIcon },
   { href: "/debug", label: "디버그", sub: "PC1·PC2 DB", icon: DebugIcon },
 ];
 
@@ -118,6 +119,13 @@ function PatientIcon() {
 function FormIcon() {
   return (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <rect x="5" y="3" width="14" height="18" rx="2.4" /><path d="M9 8h6M9 12h6M9 16h3" /></svg>);
+}
+function QrIcon() {
+  return (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
+    <rect x="3" y="14" width="7" height="7" rx="1" />
+    <path d="M14 14h1M19 14h1M14 19h3M19 19h1M14 17h1M17 17v2" />
+  </svg>);
 }
 function DebugIcon() {
   return (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

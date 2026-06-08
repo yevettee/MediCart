@@ -424,3 +424,21 @@ def update_injection_status(pid, inj_id, status, ocr_text=None):
     if ocr_text is not None:
         patch["ocr_text"] = ocr_text
     db.reference(f"patients/{pid}/injections/{inj_id}").update(patch)
+
+
+# ── 병실 디스플레이 현재 환자 ──────────────────────────────────────────────────
+
+def get_display_patient() -> str:
+    """display/current_patient 에서 현재 표시 환자 ID 반환. 없으면 빈문자열."""
+    db = _init()
+    val = db.reference("display/current_patient").get()
+    return str(val) if val else ""
+
+
+def set_display_patient(pid: str):
+    """QR 스캔 후 병실 디스플레이에 표시할 환자 ID를 Firebase에 기록."""
+    db = _init()
+    db.reference("display").update({
+        "current_patient": pid,
+        "updated_at": int(time.time() * 1000),
+    })

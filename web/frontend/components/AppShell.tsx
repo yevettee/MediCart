@@ -22,8 +22,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // 라우트 이동 시 모바일 드로어 닫기
   useEffect(() => { setMobileOpen(false); }, [path]);
 
-  // 로그인 페이지는 사이드바/크롬 없이 단독 렌더
-  if (path === "/login") return <>{children}</>;
+  // 로그인·디스플레이 페이지는 사이드바/크롬 없이 단독 렌더
+  if (path === "/login" || path === "/display") return <>{children}</>;
 
   return (
     <div className="flex min-h-screen">

@@ -10,7 +10,8 @@ async function getJSON<T>(path: string): Promise<T> {
 }
 
 export async function login(password: string): Promise<boolean> {
-  const r = await fetch(`${API_BASE}/api/login`, {
+  // Next.js 프록시 경유 — 쿠키를 같은 오리진(3001)에서 발급해 iOS Safari 크로스포트 이슈 해결
+  const r = await fetch(`/api/auth/login`, {
     method: "POST", credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password }),
@@ -19,7 +20,7 @@ export async function login(password: string): Promise<boolean> {
 }
 
 export async function logout() {
-  await fetch(`${API_BASE}/api/logout`, { method: "POST", credentials: "include" });
+  await fetch(`/api/auth/logout`, { method: "POST", credentials: "include" });
 }
 
 export type Patient = {
@@ -150,6 +151,19 @@ export type Injection = {
 
 export const getInjections = (pid: string) =>
   getJSON<Record<string, Injection>>(`/api/patients/${pid}/injections`);
+
+export const getDisplayPatient = () =>
+  getJSON<{ pid: string }>("/api/display/current");
+
+export async function setDisplayPatient(pid: string): Promise<{ ok: boolean; pid: string }> {
+  const r = await fetch(`${API_BASE}/api/display/current`, {
+    method: "POST", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pid }),
+  });
+  if (!r.ok) throw new Error(`/api/display/current → ${r.status}`);
+  return r.json();
+}
 
 export async function verifyInjection(
   pid: string,
