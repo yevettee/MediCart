@@ -32,21 +32,23 @@ class TrackerNode(Node):
         super().__init__("tracker_node")
         self.declare_parameter("namespace", os.environ.get("ROBOT_NAMESPACE", "robot6"))
         self.declare_parameter("model_path", "ward_model.pt")
+        self.declare_parameter("target_class", "nurse")
         self.declare_parameter("conf", 0.5)
-        self.declare_parameter("hfov_deg", 69.0)
-        self.declare_parameter("desired_distance", 0.8)
+        self.declare_parameter("desired_distance", 0.4)
         self.declare_parameter("lost_timeout", 5.0)
         self.declare_parameter("control_hz", 10.0)
         ns = str(self.get_parameter("namespace").value).strip("/")
         self._ns = ns
+        target_class = str(self.get_parameter("target_class").value).strip().lower()
+        desired_distance = float(self.get_parameter("desired_distance").value)
 
         self._perc = PersonTracker(
             self, ns,
             model_path=str(self.get_parameter("model_path").value),
-            conf=float(self.get_parameter("conf").value),
-            hfov_deg=float(self.get_parameter("hfov_deg").value))
+            target_classes=(target_class,),
+            conf=float(self.get_parameter("conf").value))
         self._fsm = FollowFSM(
-            FollowParams(desired_distance=float(self.get_parameter("desired_distance").value)),
+            FollowParams(desired_distance=desired_distance),
             lost_timeout=float(self.get_parameter("lost_timeout").value))
         self._active = False
 
@@ -59,7 +61,9 @@ class TrackerNode(Node):
 
         hz = float(self.get_parameter("control_hz").value)
         self.create_timer(1.0 / hz, self._tick)
-        self.get_logger().info(f"[tracker_node] round 모드 준비 ns={ns} @ {hz:.0f}Hz")
+        self.get_logger().info(
+            f"[tracker_node] round 모드 준비 ns={ns} target={target_class} "
+            f"dist={desired_distance:.2f}m @ {hz:.0f}Hz")
 
     def _on_set(self, msg):
         try:
@@ -68,17 +72,15 @@ class TrackerNode(Node):
             return
         active = bool(d.get("active"))
         if active and not self._active:
-            self._fsm.reset()
-            self._perc._locked_id = -1          # 활성화 시 재-lock(ACQUIRE)
+            self._fsm.reset()                   # 활성화 시 손실타이머 초기화(재-ACQUIRE)
         self._active = active
         self.get_logger().info(f"[tracker_node] active={active}")
 
     def _on_start_tracking(self, request, response):
         del request
-        self._perc._locked_id = -1
         self._fsm.reset()
         response.success = True
-        response.message = "re-lock requested"
+        response.message = "follow state reset"
         return response
 
     def _tick(self):
@@ -96,7 +98,7 @@ class TrackerNode(Node):
             tb = String()
             tb.data = json.dumps({"tracking_id": int(target.track_id),
                                   "distance": round(float(target.distance), 3),
-                                  "bearing": round(float(target.bearing), 4),
+                                  "error_x": round(float(target.error_x), 4),
                                   "ts": int(time.time() * 1000)})
             self._target_pub.publish(tb)
 
