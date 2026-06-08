@@ -1,3 +1,5 @@
+from glob import glob
+
 from setuptools import find_packages, setup
 
 package_name = 'nurse_tracker'
@@ -9,6 +11,8 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        # 학습된 탐지 모델을 share 에 설치(런타임 ament_index 로 해석).
+        ('share/' + package_name + '/models', glob('models/*.pt')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

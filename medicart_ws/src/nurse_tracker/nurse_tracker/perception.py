@@ -58,7 +58,7 @@ class PersonTracker:
     node: rclpy Node (구독 생성 + 로깅용)
     """
 
-    def __init__(self, node, ns, model_path="ward_model.pt", target_classes=("person",),
+    def __init__(self, node, ns, model_path="ward_model.pt", target_classes=("nurse",),
                  conf=0.5, hfov_deg=69.0, sync_slop=0.05, depth_radius=4,
                  rgb_topic=None, depth_topic=None):
         self._node = node
