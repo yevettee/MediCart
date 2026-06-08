@@ -14,12 +14,13 @@ setup(
     zip_safe=True,
     maintainer='MediCart Team',
     maintainer_email='dev@medicart.local',
-    description='Firebase Firestore bridge for MediCart data layer',
+    description='Firebase Realtime Database (RTDB) bridge for MediCart data layer',
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'db_node = db_bridge.db_node:main',
+            'prescription_server = db_bridge.prescription_server:main',
         ],
     },
 )
