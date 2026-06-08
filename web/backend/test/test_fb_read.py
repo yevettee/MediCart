@@ -177,3 +177,13 @@ def test_mission_payload_goto_missing_coords_rejected():
         fb_read.mission_payload("goto", {"x": 1.0}, 1000)      # y 없음
     with pytest.raises(ValueError):
         fb_read.mission_payload("goto", {"x": "a", "y": "b"}, 1000)   # 비수치
+
+
+def test_targets_seed_shape():
+    import fb_read
+    seed = fb_read.targets_seed()
+    assert len(seed) == 5
+    assert seed["dock"]["dock_after"] is True
+    assert seed["dock"]["x"] == -8.0 and seed["dock"]["y"] == -6.0
+    for v in seed.values():
+        assert "label" in v and "x" in v and "y" in v and "yaw" in v

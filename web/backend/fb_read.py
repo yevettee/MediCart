@@ -362,6 +362,33 @@ def get_missions(ns):
     return list_missions(_init().reference(f"{ns}/mission_pool").get())
 
 
+# ── 이동 목적지(침상/home) pose — RTDB `targets`(dashboard DEFAULT_TARGETS 미러) ──
+def targets_seed():
+    """goto 프리셋 시드(순수). dashboard 실측 좌표(map=ninety)."""
+    return {
+        "t101_1": {"label": "101호 1번", "x": -12.0, "y": -5.0, "yaw": -0.00143},
+        "t101_2": {"label": "101호 2번", "x": -12.0, "y": -6.0, "yaw": -0.00143},
+        "t102":   {"label": "102호 호출", "x": -13.0, "y": -8.0, "yaw": -0.00143},
+        "pharmacy": {"label": "약품실", "x": -9.0, "y": -9.0, "yaw": -0.00143},
+        "dock":   {"label": "Docking Station", "x": -8.0, "y": -6.0,
+                   "yaw": -0.00142, "dock_after": True},
+    }
+
+
+def get_targets():
+    """RTDB `targets` 조회(없으면 빈 dict)."""
+    return _init().reference("targets").get() or {}
+
+
+def seed_targets():
+    """`targets` 가 비어있으면 시드(멱등). 반환: 시드했으면 True."""
+    ref = _init().reference("targets")
+    if ref.get():
+        return False
+    ref.set(targets_seed())
+    return True
+
+
 def ocr_payload(text, conf, ts):
     """RTDB ocr/latest 페이로드(순수)."""
     return {"text": text, "conf": conf, "ts": int(ts)}
