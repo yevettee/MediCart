@@ -1,103 +1,247 @@
-## jeon 브랜치에서 추가된 내용
+# 🏥 MediCart — 병동 도우미 로봇 시스템
 
-약품을 카메라에 비추면 OCR로 텍스트를 읽고, 환자의 처방 주사 정보와 비교해서 맞는 약인지 확인하고 Firebase DB에 결과를 저장하는 시스템입니다.
+> 병원 복도를 돌아다니며 간호사를 도와주는 로봇이에요.  
+> QR 코드를 찍으면 아이폰에 문진표가 자동으로 뜨고, 약품 카메라로 잘못된 약을 잡아내요!
 
-### 🔑 시작 전에 — 키 파일 준비
+---
 
-#### Firebase 키 (각자 이미 가지고 있는 파일)
+## 🤔 이게 뭐예요?
 
-Firebase 키는 별도로 받을 필요 없어요.  
-`~/rokey_ws/db_test/` 안에 `medi-cart-*firebase*.json` 파일이 있으면 **자동으로 찾아서 연결**돼요.
+병원에서 간호사 선생님이 하루에 해야 하는 일이 정말 많아요.
 
-파일이 없거나 다른 곳에 있으면 환경변수로 알려주세요:
+- 환자 한 명 한 명의 **건강 상태를 기록**하고
+- **약이 맞는 약인지 확인**하고
+- 로봇이 어디 있는지 **지도로 보면서** 관리해야 해요
+
+MediCart는 이 모든 걸 도와주는 시스템이에요!
+
+---
+
+## ✨ 주요 기능
+
+### 1. 📱 QR → 문진표 자동 표시
+환자 팔찌의 QR 코드를 PC 카메라로 찍으면,  
+옆에 있는 아이폰에 그 환자의 **문진표 입력 화면이 자동으로 짠!** 하고 열려요.
+
+```
+PC 카메라로 QR 스캔
+       ↓
+ (2초 안에 자동으로)
+       ↓
+아이폰에 문진표 팝! 🎉
+```
+
+### 2. 💊 약품 카메라 검증 (OCR)
+약 봉지를 카메라에 비추면 약 이름을 읽어서,  
+**"이 환자한테 줘야 하는 약이 맞나요?"** 를 자동으로 확인해줘요.
+
+### 3. 🗺️ 로봇 실시간 지도
+로봇이 병동을 돌아다니는 걸 지도로 볼 수 있어요.  
+로봇한테 "저기 가!" 명령도 웹에서 바로 보낼 수 있어요.
+
+### 4. 🧑‍⚕️ 환자 관리
+모든 환자 정보(나이, 혈액형, 알레르기, 생체징후)를 한 곳에서 볼 수 있어요.
+
+---
+
+## 🖥️ 화면 구성
+
+| 주소 | 누가 쓰나요? | 뭐 하는 곳? |
+|------|-------------|------------|
+| `localhost:3001/qr` | PC 간호사 | 환자 QR 스캔하는 카메라 화면 |
+| `192.168.123.26:3001/display` | 아이폰 | QR 스캔하면 문진표 자동으로 뜸 |
+| `192.168.123.26:3001/` | PC | 로봇 지도, 환자 목록, 대시보드 |
+| `192.168.123.26:3001/ocr` | PC | 약품 카메라로 약 확인 |
+| `192.168.123.26:3001/intake` | 태블릿/PC | 문진표 직접 작성 |
+
+> ⚠️ PC는 **반드시 `localhost`** 로 접속해야 카메라가 열려요!  
+> (IP 주소로 접속하면 브라우저가 카메라를 막아버려요)
+
+---
+
+## 🚀 실행 방법
+
+### 준비물 확인
+- Firebase 키 파일: `~/rokey_ws/db_test/medi-cart-*firebase*.json`
+- GCP Vision 키 파일: `~/ocr_ws/src/ocr_detector/credentials/gcp_vision_key.json`
+- `.env` 파일: `web/backend/.env`
+
+---
+
+### 터미널 1 — 백엔드 (Flask) 서버 켜기
+
 ```bash
-export FIREBASE_KEY_PATH=~/내파일경로/firebase키파일.json
+cd ~/MediCart/web/backend
+set -a && source .env && set +a && python3 app.py
 ```
 
-#### GCP Vision API 키 (슬랙에서 받기)
+이런 글자가 뜨면 성공이에요:
+```
+* Running on http://0.0.0.0:5000
+```
 
-유료 버전(GCP)을 쓰려면 슬랙에서 `gcp_vision_key.json` 파일을 받아서 아래 위치에 넣어주세요.
+---
+
+### 터미널 2 — 프론트엔드 (Next.js) 서버 켜기
 
 ```bash
-mkdir -p ~/ocr_ws/src/ocr_detector/credentials
+cd ~/MediCart/web/frontend
+npm run dev -- --port 3001
 ```
 
-| 파일 이름 | 넣어야 할 경로 |
-|-----------|---------------|
-| `gcp_vision_key.json` | `~/ocr_ws/src/ocr_detector/credentials/gcp_vision_key.json` |
+이런 글자가 뜨면 성공이에요:
+```
+✓ Ready in ...ms
+```
 
-> 무료 버전(EasyOCR)만 쓸 거라면 GCP 키 없어도 돼요.
+---
 
-### 📦 필요한 패키지 설치
+### 접속하기
 
+**PC 브라우저:**
+- QR 스캐너: `http://localhost:3001/qr`
+- 대시보드: `http://localhost:3001`
+
+**아이폰 Safari:**
+- 문진표 디스플레이: `http://192.168.123.26:3001/display`
+
+**비밀번호:** `rokey1234`
+
+---
+
+## 📱 QR → 문진표 사용법 (단계별)
+
+**1단계** — 아이폰을 `http://192.168.123.26:3001/display` 에 고정해두세요
+
+```
+아이폰 화면:
+┌─────────────────────┐
+│                     │
+│   [ QR 아이콘 ]      │
+│  QR 스캔을 기다리는 중│
+│  PC에서 스캔하면 자동 │
+│  으로 문진표가 열려요  │
+│                     │
+│  ● 실시간 연결 · 2초  │
+└─────────────────────┘
+```
+
+**2단계** — PC에서 `http://localhost:3001/qr` 접속 → 웹캠 켜기
+
+**3단계** — 환자 QR 코드를 카메라에 비추기
+
+**4단계** — 아이폰에 문진표가 짠! 하고 자동으로 열려요 🎉
+
+**5단계** — 내용 입력 후 **저장** 버튼 → 자동으로 대기 화면으로 돌아와요
+
+> 💡 다른 환자 QR을 찍으면? 문진표가 자동으로 바뀌어요!
+
+---
+
+## 💊 약품 OCR 사용법
+
+**1단계** — `http://localhost:3001/ocr` 접속
+
+**2단계** — 환자 선택 (드롭다운)
+
+**3단계** — 주사 처방 선택
+
+**4단계** — 웹캠 켜고 약품 봉지를 카메라에 비추기
+
+**5단계** — **스캔 & OCR** 버튼 클릭 → 약 이름 읽기
+
+**6단계** — **약품 적합성 검증** 버튼 → 맞는 약인지 확인!
+
+```
+✅ 투약 준비 완료  →  Firebase DB에 "완료" 저장
+❌ 약품 불일치    →  Firebase DB에 "불일치" 저장, 다시 확인!
+```
+
+---
+
+## 🗂️ 폴더 구조
+
+```
+MediCart/
+├── web/
+│   ├── backend/          # Flask 서버 (Python)
+│   │   ├── app.py        # API 엔드포인트 (환자, 로봇, 디스플레이)
+│   │   ├── fb_read.py    # Firebase 데이터베이스 연결
+│   │   ├── ocr.py        # GCP Vision OCR 로직
+│   │   └── .env          # 비밀 키 모음 (git에 안 올라감)
+│   │
+│   └── frontend/         # Next.js 서버 (TypeScript)
+│       ├── app/
+│       │   ├── qr/       # PC QR 스캐너
+│       │   ├── display/  # 아이폰 문진표 디스플레이
+│       │   ├── intake/   # 문진표 입력 폼
+│       │   ├── ocr/      # 약품 OCR 검증
+│       │   └── patients/ # 환자 목록 & 상세
+│       └── lib/api.ts    # Flask API 호출 모음
+│
+├── ocr_ws/               # ROS2 OCR 노드 (약품 인식)
+├── medicart_ws/          # ROS2 로봇 제어 노드
+└── common/               # 지도, 설정 공통 파일
+```
+
+---
+
+## 🔧 자주 생기는 문제
+
+### "포트가 이미 사용 중이에요" 오류
 ```bash
-pip install easyocr gradio firebase-admin google-cloud-vision
+# 5000번 포트(Flask) 종료
+kill $(lsof -t -i:5000)
+
+# 3001번 포트(Next.js) 종료
+kill $(lsof -t -i:3001)
 ```
 
-### 🔨 빌드
+### 아이폰에서 로그인이 안 돼요
+- 아이폰도 백엔드와 같은 와이파이에 연결됐는지 확인하세요
+- IP 주소가 `192.168.123.26`이 맞는지 확인하세요: `ip addr | grep 192`
 
-```bash
-cd ~/ocr_ws
-source /opt/ros/humble/setup.bash
-colcon build --symlink-install
-```
+### QR을 찍어도 아이폰에 안 떠요
+1. 두 서버(Flask + Next.js)가 모두 켜져 있는지 확인
+2. 아이폰이 `/display` 페이지에 있는지 확인
+3. 아이폰 화면에 **"실시간 연결 · 2초 갱신"** 이 보여야 해요
 
-`Summary: 2 packages finished` 가 뜨면 성공이에요!
+### PC에서 카메라가 안 열려요
+- PC는 **반드시** `localhost:3001/qr` 로 접속해야 해요
+- IP 주소(`192.168.123.26`)로 접속하면 브라우저가 카메라를 막아요
 
-### ▶️ 실행
+---
 
-```bash
-cd ~/ocr_ws
-source install/setup.bash
-
-# 무료 버전 (EasyOCR)
-ros2 launch ocr_detector ocr_web.launch.py engine:=easyocr
-
-# 유료 버전 (GCP Vision API, 인식률 더 높음)
-ros2 launch ocr_detector ocr_web.launch.py engine:=gcp
-```
-
-> ⏳ EasyOCR은 처음 실행 시 모델 로딩에 10~30초 정도 걸려요.
-
-### 🌐 웹 화면 열기
-
-브라우저에서 아래 주소로 접속하세요:
+## 🔥 Firebase 데이터베이스 구조
 
 ```
-http://localhost:7864
+Firebase RTDB
+├── patients/
+│   └── P-2026-0001/
+│       ├── info/        # 이름, 나이, 혈액형 등
+│       ├── vitals/      # 혈압, 맥박, 체온 등
+│       ├── visits/      # 문진표 기록 목록
+│       └── injections/  # 주사 처방 목록
+│
+├── display/
+│   ├── current_patient: "P-2026-0001"  ← QR 스캔하면 여기 바뀜
+│   └── updated_at: 1234567890
+│
+└── robot3/              # 로봇 실시간 상태
+    ├── amcl_pose/       # 현재 위치
+    ├── battery_state/   # 배터리
+    └── cmd/             # 명령 (가라, 멈춰라 등)
 ```
 
-### 📷 사용 방법
+---
 
-1. **환자 선택** 드롭다운에서 환자 고르기
-2. 오른쪽에 **처방 주사 정보** 자동 표시
-3. 약품을 웹캠에 비추기
-4. **📷 OCR 스캔** 버튼 클릭 → 약품 텍스트 인식
-5. **✅ 투약 확인 (DB 업데이트)** 버튼 클릭
-6. 결과 확인
-   - `✅ 일치` → Firebase DB 상태가 **완료**로 바뀜
-   - `⚠️ 불일치` → Firebase DB 상태가 **불일치**로 바뀜
+## 👥 브랜치별 담당
 
-### 🚧 자주 나오는 오류
+| 브랜치 | 담당 | 주요 작업 |
+|--------|------|---------|
+| `main` | 공통 | 기본 구조, 환자 관리, 로봇 지도 |
+| `jeon` | 전성윤 | QR → 아이폰 문진표 자동 표시, 약품 OCR 검증 |
 
-**웹캠이 안 열릴 때**
-```bash
-ros2 launch ocr_detector ocr_web.launch.py engine:=easyocr webcam_device:=0
-```
+---
 
-**포트가 이미 사용 중일 때**
-```bash
-pkill -f ocr_web
-```
-
-**키 파일이 없다는 오류가 날 때**
-```bash
-ls ~/ocr_ws/src/ocr_detector/credentials/
-# gcp_vision_key.json 과 firebase_key.json 두 파일이 보여야 해요
-```
-
-### 🔥 Firebase DB 확인
-
-```
-https://console.firebase.google.com/project/medi-cart-ea39f/database/medi-cart-ea39f-default-rtdb/data
-```
+*병원의 간호사 선생님들이 더 편하게 일할 수 있도록 만든 프로젝트예요! 🏥*
