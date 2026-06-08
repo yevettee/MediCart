@@ -72,7 +72,7 @@ sudo apt-get install ignition-fortress
 
 ```bash
 cd ~
-git clone <이 repo 주소> MediCart
+git clone https://github.com/yevettee/MediCart.git
 cd ~/MediCart/medicart_ws
 
 # simulation/package.xml 의 의존성을 apt 로 설치한다.
