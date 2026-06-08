@@ -22,6 +22,11 @@ export default function OcrPage() {
   const [camErr, setCamErr] = useState("");
   const [camInfo, setCamInfo] = useState("");
 
+  /* OCR 모드 */
+  const [ocrMode, setOcrMode] = useState<"single" | "realtime">("single");
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scanningRef = useRef(false); // 동시 요청 방지
+
   /* OCR */
   const [ocrText, setOcrText] = useState("");
   const [scanning, setScanning] = useState(false);
@@ -92,16 +97,21 @@ export default function OcrPage() {
     }
   }, []);
 
-  /* 프레임 캡처 → OCR */
-  async function handleScan() {
+  /* 공통 캡처 + OCR — 단일/실시간 모드 모두 사용 */
+  const captureAndOcr = useCallback(async (clearPrev = false) => {
     const v = videoRef.current;
-    if (!v || !camOn) { setScanErr("웹캠을 먼저 켜세요."); return; }
-    setScanning(true); setScanErr(""); setOcrText(""); setResult(null);
+    if (!v || !camOn || scanningRef.current) return;
+    scanningRef.current = true;
+    setScanning(true);
+    setScanErr("");
+    if (clearPrev) { setOcrText(""); setResult(null); }
+
     const canvas = document.createElement("canvas");
-    canvas.width = v.videoWidth; canvas.height = v.videoHeight;
+    canvas.width = v.videoWidth;
+    canvas.height = v.videoHeight;
     canvas.getContext("2d")!.drawImage(v, 0, 0);
     canvas.toBlob(async (blob) => {
-      if (!blob) { setScanErr("캡처 실패"); setScanning(false); return; }
+      if (!blob) { setScanErr("캡처 실패"); setScanning(false); scanningRef.current = false; return; }
       try {
         const r = await runOcr(blob);
         setOcrText(r.text);
@@ -109,8 +119,34 @@ export default function OcrPage() {
         setScanErr(String(e));
       } finally {
         setScanning(false);
+        scanningRef.current = false;
       }
     }, "image/png");
+  }, [camOn]);
+
+  /* 실시간 OCR 인터벌 관리 */
+  useEffect(() => {
+    if (ocrMode === "realtime" && camOn) {
+      captureAndOcr();
+      intervalRef.current = setInterval(() => captureAndOcr(), 2000);
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    }
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [ocrMode, camOn, captureAndOcr]);
+
+  /* 단일 스캔 (버튼) */
+  async function handleScan() {
+    if (!camOn) { setScanErr("웹캠을 먼저 켜세요."); return; }
+    await captureAndOcr(true);
   }
 
   /* 검증 */
@@ -156,6 +192,24 @@ export default function OcrPage() {
               웹캠 스캔
             </h2>
 
+            {/* OCR 모드 토글 */}
+            <div className="flex rounded-xl border border-line overflow-hidden text-xs font-semibold mb-3">
+              <button
+                onClick={() => setOcrMode("single")}
+                className={`flex-1 py-2 transition-colors ${
+                  ocrMode === "single" ? "bg-teal text-white" : "text-ink-2 hover:bg-surface-2"
+                }`}>
+                단일 스캔
+              </button>
+              <button
+                onClick={() => setOcrMode("realtime")}
+                className={`flex-1 py-2 transition-colors ${
+                  ocrMode === "realtime" ? "bg-teal text-white" : "text-ink-2 hover:bg-surface-2"
+                }`}>
+                실시간 OCR
+              </button>
+            </div>
+
             {!camOn ? (
               <button onClick={startCam}
                 className="w-full rounded-xl border-2 border-dashed border-line py-10 text-ink-3 text-sm hover:border-teal hover:text-teal transition-colors flex flex-col items-center gap-2">
@@ -177,7 +231,8 @@ export default function OcrPage() {
               </p>
             )}
 
-            {camOn && (
+            {/* 단일 스캔 버튼 */}
+            {camOn && ocrMode === "single" && (
               <button
                 onClick={handleScan}
                 disabled={scanning}
@@ -186,6 +241,18 @@ export default function OcrPage() {
                 {scanning ? "인식 중…" : "스캔 & OCR"}
               </button>
             )}
+
+            {/* 실시간 OCR 상태 표시 */}
+            {camOn && ocrMode === "realtime" && (
+              <div className="mt-3 flex items-center gap-2 rounded-xl border border-teal/30 bg-teal-soft px-4 py-2.5 text-sm">
+                {scanning
+                  ? <><Spinner /><span className="text-teal font-semibold">인식 중…</span></>
+                  : <><span className="text-teal animate-pulse">●</span><span className="text-teal font-semibold">실시간 OCR 활성</span></>
+                }
+                <span className="text-ink-3 text-xs ml-auto">2초 간격</span>
+              </div>
+            )}
+
             {scanErr && <p className="text-red text-xs mt-2">{scanErr}</p>}
           </section>
 
@@ -194,6 +261,9 @@ export default function OcrPage() {
             <h2 className="font-semibold text-ink mb-2 flex items-center gap-2">
               <TextIcon />
               OCR 결과
+              {ocrMode === "realtime" && camOn && (
+                <span className="ml-auto text-xs text-ink-3 font-normal">실시간 갱신 중</span>
+              )}
             </h2>
             <pre className="whitespace-pre-wrap text-ink text-sm min-h-[6rem] bg-surface-2 rounded-xl p-3 border border-line font-mono leading-relaxed">
               {ocrText || <span className="text-ink-3">스캔 후 텍스트가 표시됩니다.</span>}

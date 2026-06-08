@@ -35,7 +35,7 @@ class DbNode(Node):
     def __init__(self):
         super().__init__('db_node')
 
-        self.declare_parameter('namespace', os.environ.get('ROBOT_NAMESPACE', 'robot6'))
+        self.declare_parameter('namespace', os.environ.get('ROBOT_NAMESPACE', 'robot3'))
         self.declare_parameter('fb_cred', os.environ.get('FB_CRED', ''))
         self.declare_parameter('fb_db_url', os.environ.get('FB_DB_URL', ''))
         self.declare_parameter('heartbeat_period', 1.0)

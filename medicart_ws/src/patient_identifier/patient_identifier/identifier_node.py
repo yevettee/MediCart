@@ -5,7 +5,7 @@ Pipeline run on each tick:
 
     YOLO person detection -> QR scan -> DB validation -> publish result
 
-Outcomes are published on ``/robot6/patient_identified``. The ``status`` field
+Outcomes are published on ``/robot3/patient_identified``. The ``status`` field
 distinguishes every path (identified / absent / mismatch / no_qr / db_error);
 the dashboard surfaces the failure statuses to the operator.
 """
@@ -26,10 +26,10 @@ from .person_detector import PersonDetector
 from .qr_scanner import QrScanner
 
 
-# Topic names under the /robot6 namespace.
-IMAGE_TOPIC = '/robot6/oakd/image_raw'
-DEPTH_TOPIC = '/robot6/oakd/depth_image'
-RESULT_TOPIC = '/robot6/patient_identified'
+# Topic names under the /robot3 namespace.
+IMAGE_TOPIC = '/robot3/oakd/image_raw'
+DEPTH_TOPIC = '/robot3/oakd/depth_image'
+RESULT_TOPIC = '/robot3/patient_identified'
 
 # Status values published in PatientIdentified.status.
 STATUS_IDENTIFIED = 'identified'

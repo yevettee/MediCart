@@ -37,7 +37,7 @@ class MissionManagerNode(Node):
         super().__init__('mission_manager_node')
 
         # ── mission_pool 시스템 명령 경로 ────────────────────────────────
-        self.declare_parameter('namespace', os.environ.get('ROBOT_NAMESPACE', 'robot6'))
+        self.declare_parameter('namespace', os.environ.get('ROBOT_NAMESPACE', 'robot3'))
         self.declare_parameter('discovery_ip', os.environ.get('DISCOVERY_IP', ''))
         self.declare_parameter('ssh_pass', os.environ.get('ROBOT_SSH_PASS', 'turtlebot4'))
         ns = str(self.get_parameter('namespace').value).strip('/')

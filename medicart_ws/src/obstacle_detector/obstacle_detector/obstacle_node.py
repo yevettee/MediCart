@@ -30,7 +30,7 @@ _CDEPTH_HEADER = 12   # compressed_depth_image_transport: enum+float+float = 12B
 class ObstacleNode(Node):
     def __init__(self):
         super().__init__("obstacle_node")
-        self.declare_parameter("namespace", os.environ.get("ROBOT_NAMESPACE", "robot6"))
+        self.declare_parameter("namespace", os.environ.get("ROBOT_NAMESPACE", "robot3"))
         ns = str(self.get_parameter("namespace").value).strip("/")
         self.declare_parameter("depth_topic", f"/{ns}/oakd/stereo/image_raw/compressedDepth")
         self.declare_parameter("caminfo_topic", f"/{ns}/oakd/stereo/camera_info")

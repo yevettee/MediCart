@@ -20,7 +20,7 @@ _LATCHED_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
 class StubMode(Node):
     def __init__(self):
         super().__init__("stub_mode_node")
-        self.declare_parameter("namespace", os.environ.get("ROBOT_NAMESPACE", "robot6"))
+        self.declare_parameter("namespace", os.environ.get("ROBOT_NAMESPACE", "robot3"))
         self.declare_parameter("mode_name", "round")
         self.declare_parameter("lin", 0.05)
         ns = str(self.get_parameter("namespace").value).strip("/")

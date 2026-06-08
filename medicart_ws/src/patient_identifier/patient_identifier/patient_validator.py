@@ -1,6 +1,6 @@
 """Validate a scanned patient against the prescription DB.
 
-Calls the db_bridge ``/robot6/db/get_prescription`` service with the
+Calls the db_bridge ``/robot3/db/get_prescription`` service with the
 patient_id extracted from the QR code, then checks that the room recorded in
 the DB matches the room the robot is currently visiting.
 """
@@ -10,8 +10,8 @@ import rclpy
 from medi_interfaces.srv import GetPrescription
 
 
-# Service exposed by db_bridge under the /robot6 namespace.
-GET_PRESCRIPTION_SERVICE = '/robot6/db/get_prescription'
+# Service exposed by db_bridge under the /robot3 namespace.
+GET_PRESCRIPTION_SERVICE = '/robot3/db/get_prescription'
 
 
 class ValidationResult:

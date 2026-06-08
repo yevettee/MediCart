@@ -366,7 +366,7 @@ class DashboardNode(Node):
         self.declare_parameter('depth_topic', '')
         self.declare_parameter('camera_fps', 10.0)
         self.declare_parameter('capture_dir', '')
-        self.declare_parameter('remote_host', 'ubuntu@192.168.109.106')
+        self.declare_parameter('remote_host', 'ubuntu@192.168.109.103')
         self.declare_parameter('remote_sudo_password', 'turtlebot4')
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('default_yaw', 0.0)

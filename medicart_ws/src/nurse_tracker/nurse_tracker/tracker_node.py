@@ -30,7 +30,7 @@ MODE = "round"
 class TrackerNode(Node):
     def __init__(self):
         super().__init__("tracker_node")
-        self.declare_parameter("namespace", os.environ.get("ROBOT_NAMESPACE", "robot6"))
+        self.declare_parameter("namespace", os.environ.get("ROBOT_NAMESPACE", "robot3"))
         self.declare_parameter("model_path", "ward_model.pt")
         self.declare_parameter("conf", 0.5)
         self.declare_parameter("hfov_deg", 69.0)
