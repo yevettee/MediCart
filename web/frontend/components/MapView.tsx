@@ -7,21 +7,28 @@ import { PRIMARY_NS, SECONDARY_NS } from "@/lib/config";
 type Rooms = { rooms?: Record<string, { x: number; y: number; yaw?: number; patient?: string }> };
 const AMR_COLOR: Record<string, string> = { robot3: "#0ca39a", robot6: "#2f74e0" };
 
-export default function MapView() {
-  const [amrs, setAmrs] = useState<Record<string, AmrSnapshot>>({});
+export default function MapView({ embedded = false, ns: nsProp, amrs: amrsProp, live: liveProp }: {
+  embedded?: boolean;                       // 콘솔 내장 시 true → 페이지 chrome 제거
+  ns?: string;                              // 외부 제어 네임스페이스(클릭 goto 대상)
+  amrs?: Record<string, AmrSnapshot>;       // 외부 제공 시 자체 SSE 생략(단일 스트림)
+  live?: boolean;
+} = {}) {
+  const [amrsState, setAmrs] = useState<Record<string, AmrSnapshot>>({});
+  const amrs = amrsProp ?? amrsState;       // controlled(콘솔) 우선, 아니면 자체 수신
   const [rooms, setRooms] = useState<Rooms>({});
   const [mapMeta, setMapMeta] = useState<MapMeta>({ available: false });
   const mapImg = useRef<HTMLImageElement | null>(null);
   const [mapReady, setMapReady] = useState(0); // 이미지 로드 트리거(리렌더)
-  const [live, setLive] = useState(false);
-  const [selNs, setSelNs] = useState<string>(PRIMARY_NS);
+  const [liveState, setLive] = useState(false);
+  const live = liveProp ?? liveState;
+  const [selNsState, setSelNs] = useState<string>(PRIMARY_NS);
+  const selNs = nsProp ?? selNsState;       // controlled(콘솔) 우선
   const viewRef = useRef<{ ox: number; oy: number; res: number; offx: number; offy: number; s: number; ih: number } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // 초기 + SSE
+  // 초기 fetch + (단독 모드일 때만) 자체 SSE. amrs 를 외부에서 받으면 스트림은 콘솔이 소유.
   useEffect(() => {
-    getAmrs().then(setAmrs).catch(() => {});
     getRooms().then(setRooms).catch(() => {});
     getMapMeta().then((m) => {
       setMapMeta(m);
@@ -31,6 +38,8 @@ export default function MapView() {
         img.src = `${API_BASE}/api/map.png?t=${Date.now()}`;
       }
     }).catch(() => {});
+    if (amrsProp) return;                   // controlled: 콘솔이 amrs/SSE 제공
+    getAmrs().then(setAmrs).catch(() => {});
     const es = new EventSource(`${API_BASE}/api/stream`, { withCredentials: true });
     es.onopen = () => setLive(true);
     es.onerror = () => setLive(false);
@@ -41,6 +50,7 @@ export default function MapView() {
       } catch {}
     };
     return () => es.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 캔버스 렌더
@@ -135,6 +145,19 @@ export default function MapView() {
     const wy = v.oy + (v.ih - (sy - v.offy) / v.s) * v.res;
     if (!window.confirm(`${selNs.toUpperCase()} → (${wx.toFixed(2)}, ${wy.toFixed(2)}) 이동할까요?`)) return;
     await pushMission(selNs, "goto", { x: wx, y: wy, yaw: 0, label: "맵 클릭" });
+  }
+
+  // 콘솔 내장 모드: 지도 캔버스만(헤더·카드·패딩 제거). 부모 높이를 채운다.
+  if (embedded) {
+    return (
+      <div ref={wrapRef} className="card relative overflow-hidden w-full h-full min-h-[360px]">
+        <canvas ref={canvasRef} className="absolute inset-0" onClick={onMapClick}
+          style={{ cursor: viewRef.current ? "crosshair" : "default" }} />
+        <div className="absolute left-4 top-4 pill bg-surface/90 border-line text-ink-2 backdrop-blur">
+          <span className="dot bg-teal" /> 2D 병동 맵 · 실시간 · 클릭 → 이동
+        </div>
+      </div>
+    );
   }
 
   return (
