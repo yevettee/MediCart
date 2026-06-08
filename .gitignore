@@ -29,3 +29,6 @@ serviceAccountKey.json
 .env
 web/**/.env
 
+# GCP service account keys - 절대 커밋 금지
+medicart_ws/src/ocr_detector/credentials/
+

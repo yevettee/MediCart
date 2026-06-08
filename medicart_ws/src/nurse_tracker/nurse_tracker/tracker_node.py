@@ -9,6 +9,7 @@ import json
 import os
 import time
 
+from ament_index_python.packages import get_package_share_directory
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
@@ -26,12 +27,16 @@ from .follow_control import FollowParams, FollowFSM
 
 MODE = "round"
 
+# 학습된 nurse/obstacle 모델(yolo11s 파인튜닝, models/best.pt) — 패키지 share 설치 경로.
+_DEFAULT_MODEL_PATH = os.path.join(
+    get_package_share_directory("nurse_tracker"), "models", "best.pt")
+
 
 class TrackerNode(Node):
     def __init__(self):
         super().__init__("tracker_node")
         self.declare_parameter("namespace", os.environ.get("ROBOT_NAMESPACE", "robot6"))
-        self.declare_parameter("model_path", "ward_model.pt")
+        self.declare_parameter("model_path", _DEFAULT_MODEL_PATH)
         self.declare_parameter("target_class", "nurse")
         self.declare_parameter("conf", 0.5)
         self.declare_parameter("desired_distance", 0.4)
