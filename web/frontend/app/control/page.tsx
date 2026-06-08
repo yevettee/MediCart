@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { PRIMARY_NS, SECONDARY_NS } from "@/lib/config";
-import { pushMission, getMissions, Mission } from "@/lib/api";
+import { pushMission, getMissions, Mission, getTargets, GotoTarget } from "@/lib/api";
 
 const ROBOTS = [PRIMARY_NS, SECONDARY_NS];
 const ROBOT_COLOR: Record<string, string> = { robot3: "#0ca39a", robot6: "#2f74e0" };
@@ -36,24 +36,29 @@ export default function ControlPage() {
   const [missions, setMissions] = useState<Mission[]>([]);
   const [toast, setToast] = useState<null | { ok: boolean; msg: string }>(null);
   const [sending, setSending] = useState("");
+  const [targets, setTargets] = useState<Record<string, GotoTarget>>({});
 
   const refresh = useCallback(() => {
     getMissions(ns).then((r) => setMissions(r.missions || [])).catch(() => setMissions([]));
   }, [ns]);
 
   useEffect(() => { refresh(); const t = setInterval(refresh, 3000); return () => clearInterval(t); }, [refresh]);
+  useEffect(() => { getTargets().then((d) => setTargets(d.targets || {})).catch(() => {}); }, []);
 
   // key: 버튼 식별(전송중 표시), action/mode: 하달 내용, label: 토스트, confirm: 확인창
-  async function dispatch(key: string, action: string, label: string, mode?: string, confirm?: boolean) {
+  async function dispatch(key: string, action: string, label: string,
+                          opts?: { mode?: string; params?: Record<string, unknown>; confirm?: boolean }) {
+    const mode = opts?.mode, params = opts?.params, confirm = opts?.confirm;
     if (sending) return;
     if (confirm && !window.confirm(`${ns.toUpperCase()} — "${label}" 하달할까요?`)) return;
     setSending(key);
     try {
-      const r = await pushMission(ns, action, undefined, mode);
+      const r = await pushMission(ns, action, params, mode);
       setToast(r.ok ? { ok: true, msg: `${ns.toUpperCase()} ← ${label} 하달됨` } : { ok: false, msg: r.error || "실패" });
       if (r.ok) refresh();
-    } catch { setToast({ ok: false, msg: "전송 실패" }); }
-    finally { setSending(""); setTimeout(() => setToast(null), 2600); }
+    } catch (e) {
+      setToast({ ok: false, msg: String(e) });
+    } finally { setSending(""); setTimeout(() => setToast(null), 2600); }
   }
 
   const col = ROBOT_COLOR[ns] || "#0ca39a";
@@ -88,7 +93,7 @@ export default function ControlPage() {
         <div className="text-[12px] font-semibold text-ink-3 mb-2">시스템 명령</div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {COMMANDS.map((c) => (
-            <button key={c.action} onClick={() => dispatch(c.action, c.action, c.label, undefined, c.confirm)} disabled={!!sending}
+            <button key={c.action} onClick={() => dispatch(c.action, c.action, c.label, { confirm: c.confirm })} disabled={!!sending}
               className={`flex flex-col items-start gap-1 p-4 rounded-2xl border text-left transition-colors disabled:opacity-50 ${TONE[c.tone]}`}>
               <span className="font-bold text-[15px]">{c.label}</span>
               <span className="text-[11.5px] opacity-80">{c.sub}</span>
@@ -102,7 +107,7 @@ export default function ControlPage() {
       <div className="mt-6">
         <div className="flex items-center justify-between mb-2">
           <div className="text-[12px] font-semibold text-ink-3">모드 (높은 우선순위가 선점, 정지 시 하위 모드 복귀)</div>
-          <button onClick={() => dispatch("clear", "clear", "전체 모드 해제", undefined, true)} disabled={!!sending}
+          <button onClick={() => dispatch("clear", "clear", "전체 모드 해제", { confirm: true })} disabled={!!sending}
             className="text-[12px] font-semibold text-red bg-red-soft border border-[#f3c9cb] rounded-lg px-3 py-1 hover:border-red disabled:opacity-50">
             전체 해제
           </button>
@@ -114,16 +119,39 @@ export default function ControlPage() {
                 <span className="font-bold text-[14px]">{m.label}</span>
                 <span className="mono text-[11px] text-ink-3 ml-2">{m.mode} · {m.sub}</span>
               </div>
-              <button onClick={() => dispatch(`start:${m.mode}`, "start", `${m.label} 시작`, m.mode)} disabled={!!sending}
+              <button onClick={() => dispatch(`start:${m.mode}`, "start", `${m.label} 시작`, { mode: m.mode })} disabled={!!sending}
                 className="text-[13px] font-semibold text-teal-600 bg-teal-soft border border-teal/30 rounded-lg px-3.5 py-1.5 hover:border-teal disabled:opacity-50">
                 {sending === `start:${m.mode}` ? "…" : "시작"}
               </button>
-              <button onClick={() => dispatch(`stop:${m.mode}`, "stop", `${m.label} 정지`, m.mode)} disabled={!!sending}
+              <button onClick={() => dispatch(`stop:${m.mode}`, "stop", `${m.label} 정지`, { mode: m.mode })} disabled={!!sending}
                 className="text-[13px] font-semibold text-ink-2 bg-surface border border-line rounded-lg px-3.5 py-1.5 hover:border-ink-3 disabled:opacity-50">
                 {sending === `stop:${m.mode}` ? "…" : "정지"}
               </button>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* 이동 프리셋 (goto) */}
+      <div className="mt-6">
+        <div className="font-bold text-[15px] mb-2">이동 (goto)</div>
+        <div className="grid grid-cols-2 gap-2">
+          {Object.entries(targets).map(([id, t]) => (
+            <button key={id} disabled={!!sending}
+              onClick={() => dispatch(`goto:${id}`, "goto", t.label, {
+                params: { x: t.x, y: t.y, yaw: t.yaw ?? 0, dock_after: !!t.dock_after, label: t.label },
+                confirm: true,
+              })}
+              className="flex flex-col items-start bg-surface-2 border border-line rounded-xl px-4 py-3 hover:border-brand disabled:opacity-50">
+              <span className="font-bold text-[14px]">{t.label}</span>
+              <span className="mono text-[10.5px] opacity-60 mt-1">
+                {sending === `goto:${id}` ? "전송 중…" : `(${t.x}, ${t.y})${t.dock_after ? " · dock" : ""}`}
+              </span>
+            </button>
+          ))}
+          {Object.keys(targets).length === 0 && (
+            <span className="text-ink-3 text-[13px]">등록된 목적지 없음(targets 시드 확인)</span>
+          )}
         </div>
       </div>
 
