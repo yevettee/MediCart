@@ -109,13 +109,19 @@ export async function updatePatient(
 
 // ── 로봇 명령 하달 (mission_pool) ──────────────────────────────────────────
 export type Mission = { id: string; action: string; mode?: string; params?: Record<string, unknown>; status: string; ts: number };
+export type GotoTarget = { label: string; x: number; y: number; yaw?: number; dock_after?: boolean };
+export const getTargets = () => getJSON<{ targets: Record<string, GotoTarget> }>("/api/targets");
 
 // 시스템 액션(dock/undock…)은 mode 생략, 모드 액션(start/stop)은 mode 지정, clear는 mode 불요.
-export async function pushMission(ns: string, action: string, mode?: string) {
+// params: goto 등 좌표 기반 미션에 {x,y,yaw,dock_after,label} 전달.
+export async function pushMission(
+  ns: string, action: string,
+  params?: Record<string, unknown>, mode?: string,
+) {
   const r = await fetch(`${API_BASE}/api/robots/${ns}/missions`, {
     method: "POST", credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(mode ? { action, mode } : { action }),
+    body: JSON.stringify({ action, params: params || {}, mode }),
   });
   return r.json() as Promise<{ ok: boolean; id?: string; error?: string }>;
 }
@@ -127,5 +133,36 @@ export async function ocr(blob: Blob): Promise<{ text: string }> {
   fd.append("image", blob, "capture.png");
   const r = await fetch(`${API_BASE}/api/ocr`, { method: "POST", credentials: "include", body: fd });
   if (!r.ok) throw new Error(`/api/ocr → ${r.status}`);
+  return r.json();
+}
+
+export type Injection = {
+  약품명?: string;
+  약물명?: string;
+  용량?: string;
+  투약경로?: string;
+  투약시간?: string;
+  status?: "pending" | "confirmed" | "mismatch";
+  verified_at?: number;
+  ocr_text?: string;
+  [k: string]: unknown;
+};
+
+export const getInjections = (pid: string) =>
+  getJSON<Record<string, Injection>>(`/api/patients/${pid}/injections`);
+
+export async function verifyInjection(
+  pid: string,
+  inj_id: string,
+  ocr_text: string,
+  prescription: string,
+): Promise<{ ok: boolean; match: boolean; status: string; reason: string }> {
+  const r = await fetch(`${API_BASE}/api/patients/${pid}/injections/${inj_id}/verify`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ocr_text, prescription }),
+  });
+  if (!r.ok) throw new Error(`/api/patients/${pid}/injections/${inj_id}/verify → ${r.status}`);
   return r.json();
 }
