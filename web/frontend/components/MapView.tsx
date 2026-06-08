@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { API_BASE, AmrSnapshot, getAmrs, getRooms, saveMode, getMapMeta, MapMeta } from "@/lib/api";
+import { API_BASE, AmrSnapshot, getAmrs, getRooms, saveMode, getMapMeta, MapMeta, pushMission } from "@/lib/api";
 import { modeOf } from "@/lib/modes";
 import { PRIMARY_NS, SECONDARY_NS } from "@/lib/config";
 
@@ -14,6 +14,8 @@ export default function MapView() {
   const mapImg = useRef<HTMLImageElement | null>(null);
   const [mapReady, setMapReady] = useState(0); // 이미지 로드 트리거(리렌더)
   const [live, setLive] = useState(false);
+  const [selNs, setSelNs] = useState<string>(PRIMARY_NS);
+  const viewRef = useRef<{ ox: number; oy: number; res: number; offx: number; offy: number; s: number; ih: number } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -63,7 +65,9 @@ export default function MapView() {
       // 맵 픽셀(좌하단 origin, y-up) → 화면. world(wx,wy)→맵픽셀→화면.
       X = (wx: number) => offx + ((wx - ox) / res) * s;
       Y = (wy: number) => offy + (ih - (wy - oy) / res) * s;
+      viewRef.current = { ox, oy, res, offx, offy, s, ih };
     } else {
+      viewRef.current = null;     // 클릭 이동은 저장맵 있을 때만
       const pts: [number, number][] = [];
       Object.values(rooms.rooms || {}).forEach((r) => pts.push([r.x, r.y]));
       Object.values(amrs).forEach((a) => a?.pose && pts.push([a.pose.x, a.pose.y]));
@@ -121,16 +125,39 @@ export default function MapView() {
 
   const sources = Object.keys(amrs).length ? Object.keys(amrs) : [PRIMARY_NS, SECONDARY_NS];
 
+  async function onMapClick(e: React.MouseEvent<HTMLCanvasElement>) {
+    const v = viewRef.current, cv = canvasRef.current;
+    if (!v || !cv) return;     // 저장맵 없으면 클릭 이동 비활성
+    const rect = cv.getBoundingClientRect();
+    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+    // 화면 → 맵픽셀 → 월드(렌더의 X/Y 역함수)
+    const wx = v.ox + ((sx - v.offx) / v.s) * v.res;
+    const wy = v.oy + (v.ih - (sy - v.offy) / v.s) * v.res;
+    if (!window.confirm(`${selNs.toUpperCase()} → (${wx.toFixed(2)}, ${wy.toFixed(2)}) 이동할까요?`)) return;
+    await pushMission(selNs, "goto", { x: wx, y: wy, yaw: 0, label: "맵 클릭" });
+  }
+
   return (
     <div className="p-7">
       <Header live={live} />
       <MappingControl amrs={amrs} />
       <div className="grid grid-cols-[1fr_320px] gap-5 mt-5 rise">
         {/* 맵 */}
-        <div ref={wrapRef} className="card relative overflow-hidden h-[calc(100vh-150px)] min-h-[420px]">
-          <canvas ref={canvasRef} className="absolute inset-0" />
-          <div className="absolute left-4 top-4 pill bg-surface/90 border-line text-ink-2 backdrop-blur">
-            <span className="dot bg-teal" /> 2D 병동 맵 · 실시간
+        <div className="flex flex-col">
+          <div className="flex gap-2 mb-2">
+            {[PRIMARY_NS, SECONDARY_NS].map((ns) => (
+              <button key={ns} onClick={() => setSelNs(ns)}
+                className={`px-3 py-1.5 rounded-lg text-[13px] font-bold border ${selNs === ns ? "bg-brand text-white border-brand" : "bg-surface-2 border-line"}`}>
+                {ns.toUpperCase()}
+              </button>
+            ))}
+            <span className="text-ink-3 text-[12px] self-center">맵 클릭 → 선택 로봇 이동</span>
+          </div>
+          <div ref={wrapRef} className="card relative overflow-hidden h-[calc(100vh-150px)] min-h-[420px]">
+            <canvas ref={canvasRef} className="absolute inset-0" onClick={onMapClick} style={{ cursor: "crosshair" }} />
+            <div className="absolute left-4 top-4 pill bg-surface/90 border-line text-ink-2 backdrop-blur">
+              <span className="dot bg-teal" /> 2D 병동 맵 · 실시간
+            </div>
           </div>
         </div>
         {/* AMR 카드 */}
