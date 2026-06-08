@@ -141,6 +141,23 @@ def valid_robot_ns(ns):
     return ns in ROBOT_NAMESPACES
 
 
+def _validate_goto_params(params):
+    """goto params 검증·정규화 → {x,y,yaw,(dock_after),(label)}."""
+    if not isinstance(params, dict):
+        raise ValueError("goto params required")
+    try:
+        x = float(params["x"])
+        y = float(params["y"])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("goto requires numeric x,y")
+    out = {"x": x, "y": y, "yaw": float(params.get("yaw", 0.0))}
+    if params.get("dock_after"):
+        out["dock_after"] = True
+    if params.get("label"):
+        out["label"] = str(params["label"])[:60]
+    return out
+
+
 def mission_payload(action, params, ts, mode=None):
     """{ns}/mission_pool 에 push 될 명령(화이트리스트 검증).
 
@@ -149,6 +166,9 @@ def mission_payload(action, params, ts, mode=None):
     """
     if action in MISSION_ACTIONS:
         return {"action": action, "params": params or {}, "status": "pending", "ts": int(ts)}
+    if action == "goto":
+        return {"action": "goto", "params": _validate_goto_params(params),
+                "status": "pending", "ts": int(ts)}
     if action in MODE_ACTIONS:
         if action != "clear" and mode not in MODE_NAMES:
             raise ValueError("invalid mode")
@@ -342,6 +362,33 @@ def get_missions(ns):
     return list_missions(_init().reference(f"{ns}/mission_pool").get())
 
 
+# ── 이동 목적지(침상/home) pose — RTDB `targets`(dashboard DEFAULT_TARGETS 미러) ──
+def targets_seed():
+    """goto 프리셋 시드(순수). dashboard 실측 좌표(map=ninety)."""
+    return {
+        "t101_1": {"label": "101호 1번", "x": -12.0, "y": -5.0, "yaw": -0.00143},
+        "t101_2": {"label": "101호 2번", "x": -12.0, "y": -6.0, "yaw": -0.00143},
+        "t102":   {"label": "102호 호출", "x": -13.0, "y": -8.0, "yaw": -0.00143},
+        "pharmacy": {"label": "약품실", "x": -9.0, "y": -9.0, "yaw": -0.00143},
+        "dock":   {"label": "Docking Station", "x": -8.0, "y": -6.0,
+                   "yaw": -0.00142, "dock_after": True},
+    }
+
+
+def get_targets():
+    """RTDB `targets` 조회(없으면 빈 dict)."""
+    return _init().reference("targets").get() or {}
+
+
+def seed_targets():
+    """`targets` 가 비어있으면 시드(멱등). 반환: 시드했으면 True."""
+    ref = _init().reference("targets")
+    if ref.get():
+        return False
+    ref.set(targets_seed())
+    return True
+
+
 def ocr_payload(text, conf, ts):
     """RTDB ocr/latest 페이로드(순수)."""
     return {"text": text, "conf": conf, "ts": int(ts)}
@@ -351,3 +398,47 @@ def set_ocr(text, conf=None):
     """OCR 결과를 RTDB ocr/latest 에 기록."""
     db = _init()
     db.reference("ocr/latest").set(ocr_payload(text, conf, int(time.time() * 1000)))
+
+
+# ── 주사/투약 검증 ──────────────────────────────────────────────────────────────
+def get_injections(pid):
+    """patients/{pid}/injections 전체 반환 (dict: inj_id → injection_data)."""
+    if not valid_pid(pid):
+        return {}
+    db = _init()
+    raw = db.reference(f"patients/{pid}/injections").get()
+    if not isinstance(raw, dict):
+        return {}
+    return raw
+
+
+def update_injection_status(pid, inj_id, status, ocr_text=None):
+    """patients/{pid}/injections/{inj_id} 상태 갱신.
+
+    status: 'confirmed' | 'mismatch' | 'pending'
+    """
+    if not valid_pid(pid):
+        raise ValueError("invalid patientId")
+    db = _init()
+    patch = {"status": status, "verified_at": int(time.time() * 1000)}
+    if ocr_text is not None:
+        patch["ocr_text"] = ocr_text
+    db.reference(f"patients/{pid}/injections/{inj_id}").update(patch)
+
+
+# ── 병실 디스플레이 현재 환자 ──────────────────────────────────────────────────
+
+def get_display_patient() -> str:
+    """display/current_patient 에서 현재 표시 환자 ID 반환. 없으면 빈문자열."""
+    db = _init()
+    val = db.reference("display/current_patient").get()
+    return str(val) if val else ""
+
+
+def set_display_patient(pid: str):
+    """QR 스캔 후 병실 디스플레이에 표시할 환자 ID를 Firebase에 기록."""
+    db = _init()
+    db.reference("display").update({
+        "current_patient": pid,
+        "updated_at": int(time.time() * 1000),
+    })

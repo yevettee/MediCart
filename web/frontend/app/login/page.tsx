@@ -37,11 +37,13 @@ function LoginForm() {
         </div>
 
         <label className="block text-[13px] font-semibold text-ink-2 mt-6 mb-1.5">접속 비밀번호</label>
-        <input autoFocus type="password" value={pw} onChange={(e) => setPw(e.target.value)}
+        <input autoFocus type="password" value={pw}
+          onChange={(e) => setPw(e.target.value)}
+          onInput={(e) => setPw((e.target as HTMLInputElement).value)}
           placeholder="비밀번호" className="field" />
         {err && <p className="text-red text-[12.5px] mt-2">비밀번호가 올바르지 않습니다.</p>}
 
-        <button type="submit" disabled={busy || !pw}
+        <button type="submit" disabled={busy}
           className="w-full mt-5 bg-teal text-white font-semibold text-[14px] py-2.5 rounded-xl hover:bg-teal-600 transition-colors disabled:opacity-40 shadow-[0_6px_16px_-6px_rgba(12,163,154,.6)]">
           {busy ? "확인 중…" : "입장"}
         </button>

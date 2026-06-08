@@ -15,5 +15,5 @@ export function middleware(req: NextRequest) {
 
 // /login·정적파일(_next, 확장자 있는 파일)·favicon 제외한 모든 페이지 보호.
 export const config = {
-  matcher: ["/((?!login|_next/static|_next/image|favicon.ico|.*\\.).*)"],
+  matcher: ["/((?!login|api/|_next/static|_next/image|favicon.ico|.*\\.).*)"],
 };

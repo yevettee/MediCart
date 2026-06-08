@@ -1,29 +1,42 @@
-"""ocr — EasyOCR 텍스트 추출 (ocr_realtime.py 이식).
+"""ocr — GCP Vision API 텍스트 추출.
 
-순수 로직(신뢰도 필터·줄결합)은 easyocr 무관이라 단위테스트한다. EasyOCR Reader는
-ko+en 로컬 추론으로 lazy 싱글톤(최초 1회 ~500MB 다운로드). 웹 백엔드 전용.
+서비스 계정 키를 명시적으로 로드해 GOOGLE_APPLICATION_CREDENTIALS 환경변수와 무관하게 동작.
+키 경로: GCP_VISION_KEY_PATH 환경변수 → 기본 경로 순으로 탐색.
 """
-_reader = None
+import os
+
+_DEFAULT_KEY = "/home/jeon/ocr_ws/src/ocr_detector/credentials/gcp_vision_key.json"
+_client = None
 
 
-def filter_join(results, min_conf):
-    """easyocr readtext 결과 [(bbox, text, conf), ...] → conf>min_conf text 줄결합."""
-    texts = [t for (_bbox, t, c) in results if c > min_conf]
-    return "\n".join(texts) if texts else "인식된 텍스트 없음"
+def _get_client():
+    global _client
+    if _client is not None:
+        return _client
+    from google.cloud import vision
+    from google.oauth2 import service_account
+
+    key_path = os.environ.get("GCP_VISION_KEY_PATH", _DEFAULT_KEY)
+    if not os.path.exists(key_path):
+        raise FileNotFoundError(f"GCP Vision 키 파일을 찾을 수 없습니다: {key_path}")
+
+    creds = service_account.Credentials.from_service_account_file(
+        key_path, scopes=["https://www.googleapis.com/auth/cloud-vision"]
+    )
+    _client = vision.ImageAnnotatorClient(credentials=creds)
+    return _client
 
 
-def _get_reader():
-    global _reader
-    if _reader is None:
-        import easyocr
-        _reader = easyocr.Reader(["ko", "en"], gpu=False)
-    return _reader
+def recognized_text(image_bytes, min_conf=0.0):
+    """이미지 bytes → 인식 텍스트. GCP Vision API DOCUMENT_TEXT_DETECTION 사용."""
+    from google.cloud import vision
 
+    client = _get_client()
+    image = vision.Image(content=image_bytes)
+    response = client.document_text_detection(image=image)
 
-def recognized_text(image_bytes, min_conf=0.3):
-    """이미지 bytes → 인식 텍스트(여러 줄). easyocr 로컬 추론."""
-    import io
-    import numpy as np
-    from PIL import Image
-    img = np.array(Image.open(io.BytesIO(image_bytes)).convert("RGB"))
-    return filter_join(_get_reader().readtext(img), min_conf)
+    if response.error.message:
+        raise RuntimeError(f"GCP Vision 오류: {response.error.message}")
+
+    text = response.full_text_annotation.text.strip()
+    return text if text else "인식된 텍스트 없음"
