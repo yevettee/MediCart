@@ -42,18 +42,27 @@ FB_CRED=/home/<본인계정>/rokey_ws/db_test/medi-cart-ea39f-firebase-adminsdk-
 
 ### GCP Vision API 키 — 수동 배치
 
-슬랙으로 공유받은 `gcp_vision_key.json` 을 아래 경로에 넣으세요:
+슬랙에서 `gcp_vision_key.json` 파일을 받은 뒤 아래 순서대로 진행하세요.
 
-```
-MediCart/web/backend/credentials/gcp_vision_key.json
+**① 폴더 만들기**
+```bash
+mkdir -p ~/MediCart/web/backend/credentials
 ```
 
-> 이 파일은 `.gitignore`에 등록되어 있어 git에 올라가지 않습니다.
+**② 파일 복사 (다운로드 폴더 기준)**
+```bash
+cp ~/다운로드/gcp_vision_key.json ~/MediCart/web/backend/credentials/gcp_vision_key.json
+```
 
-경로를 바꾸고 싶으면 `.env`에 추가:
+완료 후 확인:
+```bash
+ls ~/MediCart/web/backend/credentials/
+# gcp_vision_key.json 이 보이면 정상
 ```
-GCP_VISION_KEY_PATH=/원하는/경로/gcp_vision_key.json
-```
+
+> ✅ 이 파일은 `.gitignore`에 등록되어 있어 **git에 올라가지 않습니다. 절대 커밋하지 마세요.**
+
+> ⚠️ 사용자 이름이 `rokey`인 경우 경로가 `/home/rokey/MediCart/...` 입니다. `~` 는 본인 홈 폴더로 자동 변환됩니다.
 
 ---
 
