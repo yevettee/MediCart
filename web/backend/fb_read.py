@@ -398,3 +398,29 @@ def set_ocr(text, conf=None):
     """OCR 결과를 RTDB ocr/latest 에 기록."""
     db = _init()
     db.reference("ocr/latest").set(ocr_payload(text, conf, int(time.time() * 1000)))
+
+
+# ── 주사/투약 검증 ──────────────────────────────────────────────────────────────
+def get_injections(pid):
+    """patients/{pid}/injections 전체 반환 (dict: inj_id → injection_data)."""
+    if not valid_pid(pid):
+        return {}
+    db = _init()
+    raw = db.reference(f"patients/{pid}/injections").get()
+    if not isinstance(raw, dict):
+        return {}
+    return raw
+
+
+def update_injection_status(pid, inj_id, status, ocr_text=None):
+    """patients/{pid}/injections/{inj_id} 상태 갱신.
+
+    status: 'confirmed' | 'mismatch' | 'pending'
+    """
+    if not valid_pid(pid):
+        raise ValueError("invalid patientId")
+    db = _init()
+    patch = {"status": status, "verified_at": int(time.time() * 1000)}
+    if ocr_text is not None:
+        patch["ocr_text"] = ocr_text
+    db.reference(f"patients/{pid}/injections/{inj_id}").update(patch)

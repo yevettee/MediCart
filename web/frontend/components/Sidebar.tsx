@@ -8,7 +8,7 @@ const NAV = [
   { href: "/control", label: "로봇 제어", sub: "명령 하달", icon: ControlIcon },
   { href: "/patients", label: "환자 정보", sub: "회진 보조", icon: PatientIcon },
   { href: "/intake", label: "문진표", sub: "작성·저장", icon: FormIcon },
-  { href: "/ocr", label: "약품 OCR", sub: "텍스트 인식", icon: FormIcon },
+  { href: "/ocr", label: "처치실", sub: "투약 준비·검증", icon: FormIcon },
   { href: "/debug", label: "디버그", sub: "PC1·PC2 DB", icon: DebugIcon },
 ];
 

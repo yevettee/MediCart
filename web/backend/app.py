@@ -17,6 +17,46 @@ import patients as patient_store
 import fb_read
 import ocr
 
+# ── 약품명 매칭 (한글→영문 별명) ────────────────────────────────────────────────
+_MEDICINE_ALIASES: dict[str, list[str]] = {
+    "호르몬 주사": ["hormone", "insulin", "estrogen", "testosterone", "hgh", "growth hormone"],
+    "비타민 주사": ["vitamin", "ascorbic", "riboflavin", "thiamine", "b12", "vit"],
+    "스테로이드 주사": ["steroid", "dexamethasone", "methylprednisolone", "hydrocortisone", "prednisolone"],
+    "항생제": ["antibiotic", "amoxicillin", "penicillin", "cephalosporin", "ciprofloxacin"],
+    "진통제": ["painkiller", "analgesic", "acetaminophen", "ibuprofen", "morphine", "tramadol"],
+    "수액": ["saline", "dextrose", "lactated", "ringer", "ns", "d5w", "normal saline"],
+    "항암제": ["chemotherapy", "taxol", "cisplatin", "doxorubicin", "vincristine"],
+}
+
+
+def _check_medicine(prescription: str, ocr_text: str) -> tuple[bool, str]:
+    """처방 약품명이 OCR 텍스트에 포함되는지 확인 (한글·영문 별명 모두 허용)."""
+    prx = " ".join(prescription.split()).lower()
+    # 줄바꿈·연속 공백을 단일 공백으로 정규화 (OCR이 줄바꿈으로 단어를 쪼갤 수 있음)
+    ocr_normalized = " ".join(ocr_text.split()).lower()
+    # 공백 제거 버전도 준비 (붙여쓰기 대응)
+    ocr_nospace = re.sub(r"\s+", "", ocr_normalized)
+    prx_nospace = re.sub(r"\s+", "", prx)
+
+    # 직접 포함 여부 (정규화 + 공백제거 둘 다 시도)
+    if prx in ocr_normalized or prx_nospace in ocr_nospace:
+        return True, f"'{prescription}' 직접 확인됨"
+
+    ocr = ocr_normalized
+
+    # 한글 별명 그룹 검색
+    for kor_name, aliases in _MEDICINE_ALIASES.items():
+        group_names = [kor_name.lower()] + [a.lower() for a in aliases]
+        prx_in_group = any(g in prx or prx in g for g in group_names)
+        if prx_in_group:
+            for alias in aliases:
+                if alias in ocr:
+                    return True, f"'{prescription}' → '{alias}' 별명 확인됨"
+            # 처방이 이 그룹에 속하지만 OCR에서 못 찾은 경우
+            break
+
+    return False, f"'{prescription}'을(를) OCR 텍스트에서 확인할 수 없습니다"
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 등록번호 형식 검증 — 키 주입·IDOR 방지 (P-YYYY-NNNN)
 _PID_RE = re.compile(r"^P-\d{4}-\d{4}$")
@@ -106,6 +146,35 @@ def patient(pid):
     p = dict(p)
     p["intake"] = fb_read.get_intake(pid)   # 저장된 문진표(있으면)
     return jsonify(p)
+
+
+# ── 주사/투약 검증 ────────────────────────────────────────────────────────────
+@app.get("/api/patients/<pid>/injections")
+def patient_injections(pid):
+    if not _PID_RE.match(pid):
+        return jsonify({"error": "invalid id"}), 400
+    inj = fb_read.get_injections(pid)
+    return jsonify(inj)
+
+
+@app.post("/api/patients/<pid>/injections/<inj_id>/verify")
+def verify_injection(pid, inj_id):
+    if not _PID_RE.match(pid):
+        return jsonify({"error": "invalid id"}), 400
+    body = request.get_json(force=True, silent=True) or {}
+    ocr_text = str(body.get("ocr_text", "")).strip()
+    prescription = str(body.get("prescription", "")).strip()
+    if not ocr_text or not prescription:
+        return jsonify({"error": "ocr_text and prescription are required"}), 400
+
+    match, reason = _check_medicine(prescription, ocr_text)
+    status = "confirmed" if match else "mismatch"
+    try:
+        fb_read.update_injection_status(pid, inj_id, status, ocr_text)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({"ok": True, "match": match, "status": status, "reason": reason})
 
 
 # ── AMR 상태/스트림 ──────────────────────────────────────────────────────────

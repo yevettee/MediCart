@@ -135,3 +135,34 @@ export async function ocr(blob: Blob): Promise<{ text: string }> {
   if (!r.ok) throw new Error(`/api/ocr → ${r.status}`);
   return r.json();
 }
+
+export type Injection = {
+  약품명?: string;
+  약물명?: string;
+  용량?: string;
+  투약경로?: string;
+  투약시간?: string;
+  status?: "pending" | "confirmed" | "mismatch";
+  verified_at?: number;
+  ocr_text?: string;
+  [k: string]: unknown;
+};
+
+export const getInjections = (pid: string) =>
+  getJSON<Record<string, Injection>>(`/api/patients/${pid}/injections`);
+
+export async function verifyInjection(
+  pid: string,
+  inj_id: string,
+  ocr_text: string,
+  prescription: string,
+): Promise<{ ok: boolean; match: boolean; status: string; reason: string }> {
+  const r = await fetch(`${API_BASE}/api/patients/${pid}/injections/${inj_id}/verify`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ocr_text, prescription }),
+  });
+  if (!r.ok) throw new Error(`/api/patients/${pid}/injections/${inj_id}/verify → ${r.status}`);
+  return r.json();
+}

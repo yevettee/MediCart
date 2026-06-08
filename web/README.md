@@ -1,14 +1,16 @@
-# web — 병동 보조 로봇 대시보드 (MediCart)
+# web — 병동 보조 로봇 대시보드 (MediCart · jeon 브랜치)
 
 Flask(백엔드 :5000) + Next.js(프론트 :3000). Firebase RTDB를 **서버측(firebase-admin)** 에서 읽어
 SSE/REST로 프론트에 제공. 프론트(브라우저)는 Flask만 호출하고 RTDB를 직접 만지지 않는다.
-로봇 텔레메트리 생산자(`ward_bridge`, RTDB `{ns}` 기록)는 intel1에서 동작 — 이 웹은 **읽기/쓰기만**.
 
-MediCart **standalone**: NS·맵·discovery는 `/home/rokey/MediCart/common/` 에 있다(intel1 비의존).
+**jeon 브랜치 추가 기능 — 처치실 (약품 OCR 검증)**
+- GCP Vision API로 약품 라벨 텍스트 인식 (호르몬·비타민·스테로이드 주사)
+- 환자별 처방 주사 확인 → OCR 스캔 → 약품 적합성 검증 → Firebase DB 상태 업데이트
+- 사이드바 "처치실" 메뉴 (`/ocr`)
 
 ```
-backend/   Flask : fb_read(RTDB 경계)·patients·ocr·app(SSE/REST/auth/mission)
-frontend/  Next  : app/{map,control,patients,intake,ocr,debug}, lib/api(백엔드 호출)
+backend/   Flask : fb_read(RTDB 경계)·patients·ocr(GCP Vision)·app(SSE/REST/auth/OCR검증)
+frontend/  Next  : app/{map,control,patients,intake,ocr(처치실),debug}, lib/api
 deploy/    systemd 서비스 + setup-tunnel.sh(호스팅)
 docs/      architecture·setup·deploy(DEPLOY.md)
 legacy/    구 Redis/xlsx 구현(미사용·참고)
@@ -16,143 +18,144 @@ legacy/    구 Redis/xlsx 구현(미사용·참고)
 
 ---
 
-## 0. 사전 준비 (최초 1회)
+## 0. 키 파일 준비 (최초 1회, git에 절대 올리지 않음)
+
+### 필요한 키 파일 2개
+
+| 파일 | 용도 | 받는 방법 |
+|---|---|---|
+| Firebase 서비스 계정 키 | RTDB 읽기/쓰기 | 각자 Firebase 콘솔에서 발급 또는 기존 파일 사용 |
+| GCP Vision API 키 | 약품 OCR (유료) | 슬랙으로 공유받은 `gcp_vision_key.json` 사용 |
+
+### Firebase 키 — 자동 탐색 (별도 설정 불필요)
+
+백엔드가 아래 순서로 자동 탐색합니다:
+1. 환경변수 `FB_CRED`에 지정된 경로
+2. `~/rokey_ws/db_test/medi-cart-*firebase*.json` (팀 표준 위치)
+
+👉 **`~/rokey_ws/db_test/` 에 Firebase 키가 있으면 추가 설정 불필요**
+
+사용자 이름이 `rokey`가 아닌 경우 `.env`에 경로를 직접 지정하세요:
+```
+FB_CRED=/home/<본인계정>/rokey_ws/db_test/medi-cart-ea39f-firebase-adminsdk-xxx.json
+```
+
+### GCP Vision API 키 — 수동 배치
+
+슬랙에서 `gcp_vision_key.json` 파일을 받은 뒤 아래 순서대로 진행하세요.
+
+**① 폴더 만들기**
+```bash
+mkdir -p ~/MediCart/web/backend/credentials
+```
+
+**② 파일 복사 (다운로드 폴더 기준)**
+```bash
+cp ~/다운로드/gcp_vision_key.json ~/MediCart/web/backend/credentials/gcp_vision_key.json
+```
+
+완료 후 확인:
+```bash
+ls ~/MediCart/web/backend/credentials/
+# gcp_vision_key.json 이 보이면 정상
+```
+
+> ✅ 이 파일은 `.gitignore`에 등록되어 있어 **git에 올라가지 않습니다. 절대 커밋하지 마세요.**
+
+> ⚠️ 사용자 이름이 `rokey`인 경우 경로가 `/home/rokey/MediCart/...` 입니다. `~` 는 본인 홈 폴더로 자동 변환됩니다.
+
+---
+
+## 1. 사전 준비 (최초 1회)
 
 ```bash
-# (1) 서비스계정 키 — 저장소 밖, 600 권한
-ls /home/rokey/secrets/serviceAccountKey.json     # 없으면 발급 후 이 경로에 두기
+# (1) 백엔드 의존 설치
+cd MediCart/web/backend
+pip install -r requirements.txt      # flask·firebase-admin·google-cloud-vision 등
 
-# (2) 백엔드 venv + 의존
-cd /home/rokey/MediCart/web/backend
-python3 -m venv venv
-venv/bin/pip install -r requirements.txt          # flask·firebase-admin·easyocr 등
-
-# (3) 프론트 의존
-cd /home/rokey/MediCart/web/frontend
+# (2) 프론트 의존 설치
+cd MediCart/web/frontend
 npm install
 
-# (4) .env 작성 (시크릿 — git 제외됨)
-cd /home/rokey/MediCart/web/backend
+# (3) 백엔드 .env 작성 (git 제외됨)
+cd MediCart/web/backend
 cp .env.example .env
-#  - FB_CRED=/home/rokey/secrets/serviceAccountKey.json
-#  - FB_DB_URL=https://medi-cart-ea39f-default-rtdb.asia-southeast1.firebasedatabase.app
-#  - INTEL_PASSWORD=<로그인 비번>
-#  - INTEL_AUTH_TOKEN=$(python3 -c "import secrets;print(secrets.token_urlsafe(32))")
-#  - NS(PRIMARY/SECONDARY)는 .env가 아니라 common/robot.env(ROBOT_NAMESPACE)에서 도출됨
+# 아래 항목 수정:
+#   FB_CRED=           ← Firebase 키 경로 (자동탐색이면 생략 가능)
+#   FB_DB_URL=https://medi-cart-ea39f-default-rtdb.asia-southeast1.firebasedatabase.app
+#   INTEL_PASSWORD=rokey1234
+#   INTEL_AUTH_TOKEN=  ← python3 -c "import secrets;print(secrets.token_urlsafe(32))"
+#   GCP_VISION_KEY_PATH=  ← gcp_vision_key.json 경로 (기본값 사용 시 생략 가능)
+
+# (4) 프론트 .env.local 작성 (git 제외됨)
+cd MediCart/web/frontend
+# 아래 내용으로 .env.local 파일 직접 생성:
+#   INTEL_AUTH_TOKEN=<backend .env의 INTEL_AUTH_TOKEN과 동일한 값>
 ```
 
-> **NS·맵은 `/home/rokey/MediCart/common/`** 의 `robot.env`·`maps/` 를 쓴다. 로봇(robot3↔robot6) 전환은
-> `common/robot.env` 의 `ROBOT_NAMESPACE` 한 곳만 바꾸면 백엔드·프론트 빌드에 함께 반영된다.
+> ⚠️ `INTEL_AUTH_TOKEN`은 백엔드 `.env`와 프론트 `.env.local` 에 **동일한 값**이어야 합니다.
+> 다르면 로그인해도 모든 페이지가 `/login`으로 튕깁니다.
 
 ---
 
-## 1. 로컬 개발 실행
+## 2. 로컬 개발 실행
 
-### 백엔드 (:5000)
+### 백엔드 (터미널 1)
 ```bash
-set -a
-source /home/rokey/MediCart/common/robot.env      # ROBOT_NAMESPACE → PRIMARY_NS
-source /home/rokey/MediCart/web/backend/.env       # 시크릿·FB·MAP 경로
-set +a
-cd /home/rokey/MediCart/web/backend
-venv/bin/python app.py
+cd MediCart/web/backend
+set -a && source .env && set +a
+python3 app.py
+# → http://localhost:5000
 ```
 
-### 프론트 (:3000, dev)
+### 프론트 (터미널 2)
 ```bash
-cd /home/rokey/MediCart/web/frontend
-export INTEL_AUTH_TOKEN="$(grep '^INTEL_AUTH_TOKEN=' ../backend/.env | cut -d= -f2-)"   # 미들웨어 필수
-export NEXT_PUBLIC_PRIMARY_NS=robot6               # common/robot.env 기준
-npm run dev                                        # http://localhost:3000 (API는 localhost:5000)
+cd MediCart/web/frontend
+npm run dev -- --port 3000
+# → http://localhost:3000
 ```
-- dev는 API_BASE 기본값이 `http://localhost:5000` 라 로컬 백엔드와 바로 붙는다.
-- ⚠ `INTEL_AUTH_TOKEN` 이 없으면 미들웨어가 모든 페이지를 `/login` 으로 막는다(아래 "함정" 참고).
+
+> ⚠️ `npm run dev` 만 쓰면 백엔드 `.env`의 `PORT=5000`을 상속해 포트 충돌이 납니다.
+> 반드시 `-- --port 3000` 을 붙이세요.
+
+브라우저에서 `http://localhost:3000` 접속 → 비밀번호 입력 → 로그인
 
 ---
 
-## 2. 프로덕션 / 공개 호스팅 (intel.thatshoon.com)
+## 3. 처치실 (약품 OCR 검증) 사용법
 
-dev 모드 HMR 웹소켓이 터널에서 깨지므로 **반드시 프로덕션 빌드**로 호스팅한다.
-
-### 백엔드 (:5000) — 로컬 개발과 동일
-```bash
-set -a
-source /home/rokey/MediCart/common/robot.env
-source /home/rokey/MediCart/web/backend/.env
-set +a
-cd /home/rokey/MediCart/web/backend
-venv/bin/python app.py
-```
-
-### 프론트 빌드 (NS를 robot.env에서 주입)
-```bash
-cd /home/rokey/MediCart/web/frontend
-source /home/rokey/MediCart/common/robot.env
-PRI="${ROBOT_NAMESPACE#/}"; case "$PRI" in robot6) SEC=robot3;; robot3) SEC=robot6;; *) SEC=robot6;; esac
-NEXT_PUBLIC_API_BASE="" NEXT_PUBLIC_PRIMARY_NS="$PRI" NEXT_PUBLIC_SECONDARY_NS="$SEC" npm run build
-```
-
-### 프론트 기동 (:3000) — 토큰 + PORT 주의
-```bash
-cd /home/rokey/MediCart/web/frontend
-set -a; source /home/rokey/MediCart/web/backend/.env; set +a   # INTEL_AUTH_TOKEN
-export PORT=3000                                                # ★ .env의 PORT=5000(백엔드용)을 덮어씀
-npm run start
-```
-
-### Cloudflare 터널
-```bash
-cloudflared --no-autoupdate --config ~/.cloudflared/config.yml tunnel run intel
-```
-→ `https://intel.thatshoon.com` (`/api/*`→Flask:5000, 그 외→Next:3000)
+1. 사이드바 **처치실** 클릭
+2. **환자 선택** — 드롭다운에서 투약 대상 환자 선택
+3. **주사 처방 선택** — 해당 환자의 처방 목록 확인 (투약 대기중 상태)
+4. **웹캠 켜기** → 약품 라벨에 카메라 조준
+5. **스캔 & OCR** — GCP Vision API가 텍스트 인식
+6. **약품 적합성 검증 & DB 저장** — 처방과 OCR 결과 비교
+   - ✅ 일치 → "투약 준비 완료" (Firebase DB 상태 `confirmed` 업데이트)
+   - ❌ 불일치 → "약품 불일치 — 재확인 필요" (상태 `mismatch`)
 
 ---
 
-## 3. systemd 영속 운용 (권장)
-
-`deploy/setup-tunnel.sh` 가 빌드 + 3개 서비스 설치·기동을 한 번에 한다(최초 `cloudflared tunnel login` 후):
-```bash
-~/MediCart/web/deploy/setup-tunnel.sh
-```
-설치되는 서비스 — `medicart-backend`(:5000) · `medicart-frontend`(:3000) · `medicart-tunnel`.
-```bash
-systemctl status  medicart-backend medicart-frontend medicart-tunnel
-sudo systemctl restart medicart-backend          # 코드/.env 변경 후
-sudo systemctl restart medicart-frontend         # 프론트 재빌드 후
-journalctl -u medicart-tunnel -f
-```
-자세한 내용은 `deploy/DEPLOY.md`.
-
----
-
-## 4. 중지 / 재시작 (수동 기동 시)
-
-수동으로 띄운 경우 PID로 종료 후 재기동(포트 충돌 방지):
-```bash
-kill -9 $(ss -ltnp | grep ':5000' | grep -oE 'pid=[0-9]+' | cut -d= -f2)   # 백엔드
-kill -9 $(ss -ltnp | grep ':3000' | grep -oE 'pid=[0-9]+' | cut -d= -f2)   # 프론트
-```
-
----
-
-## 5. 흔한 함정 (반드시 확인)
+## 4. 흔한 함정
 
 | 증상 | 원인 | 해결 |
 |---|---|---|
-| 로그인해도 모든 페이지가 `/login` 으로 튕김(307) | 프론트 프로세스에 `INTEL_AUTH_TOKEN` 없음 → 미들웨어 fail-closed | 기동 전 `.env` source(토큰 주입) |
-| 프론트가 `:5000`을 잡아 `EADDRINUSE` | `.env`의 `PORT=5000`(백엔드용)을 상속 | 프론트는 `export PORT=3000` 후 start |
-| 기동이 조용히 `exit 1` | 기존 프로세스가 포트 점유 | 위 "중지"로 PID kill 후 재기동 |
-| `/api/*` 500, RTDB 오류 | 인터넷/FB 도달 불가 또는 `FB_CRED`·`FB_DB_URL` 누락 | 네트워크 + `.env` 확인 |
-| 대시보드에 AMR 실데이터 없음 | 로봇측 `ward_bridge`(intel1) 미가동 | 로봇 PC에서 ward_bridge 실행 필요 |
+| 로그인해도 `/login`으로 튕김 | 프론트 `.env.local`에 `INTEL_AUTH_TOKEN` 없거나 백엔드와 값 불일치 | 두 파일의 토큰값 일치 확인 |
+| 프론트가 `:5000`으로 `EADDRINUSE` | 백엔드 `.env`의 `PORT=5000` 상속 | `npm run dev -- --port 3000` 으로 실행 |
+| OCR 오류 "키 파일을 찾을 수 없음" | `gcp_vision_key.json` 미배치 | `web/backend/credentials/` 에 파일 배치 |
+| OCR 오류 "UNAUTHENTICATED" | Firebase 키가 `GOOGLE_APPLICATION_CREDENTIALS`에 등록된 상태 | `unset GOOGLE_APPLICATION_CREDENTIALS` 후 재시작 |
+| 약품 인식 후 불일치 처리 | OCR이 줄바꿈으로 단어 분리 (예: `호르몬\n주사`) | 자동 정규화됨 — Flask 재시작 후 재시도 |
+| Firebase DB 주사 목록 없음 | 환자 데이터에 injections 노드 없음 | 팀 DB 관리자에게 시딩 요청 |
 
 ---
 
-## 6. 빠른 점검
+## 5. 빠른 점검
 ```bash
-curl -s -c /tmp/c -X POST localhost:5000/api/login -H 'Content-Type: application/json' -d '{"password":"<INTEL_PASSWORD>"}'
-curl -s -b /tmp/c localhost:5000/api/health        # {"ok":true}
-curl -s -b /tmp/c localhost:5000/api/map           # 맵 메타(available/origin/resolution)
-curl -s -b /tmp/c localhost:5000/api/amrs          # robot3/robot6 스냅샷
+# 로그인 + API 동작 확인
+curl -s -c /tmp/c -X POST localhost:5000/api/login \
+  -H 'Content-Type: application/json' -d '{"password":"rokey1234"}'
+curl -s -b /tmp/c localhost:5000/api/health            # {"ok":true}
+curl -s -b /tmp/c localhost:5000/api/patients          # 환자 목록
+curl -s -b /tmp/c localhost:5000/api/patients/P-2026-0001/injections  # 주사 처방
 ```
 
-페이지: `/`(홈) · `/map`(실시간 관제) · `/control`(로봇 제어·명령) · `/patients`(환자) · `/intake`(문진) · `/ocr`(약품 OCR) · `/debug`.
+페이지: `/`(홈) · `/map`(실시간 관제) · `/control`(로봇 제어) · `/patients`(환자) · `/intake`(문진) · `/ocr`(처치실) · `/debug`
