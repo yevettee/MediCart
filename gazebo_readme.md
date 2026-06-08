@@ -14,7 +14,7 @@
 
 ```bash
 # 1) repo 클론
-cd ~ && git clone <이 repo 주소> MediCart
+cd ~ && git clone https://github.com/yevettee/MediCart.git
 
 # 2) 의존성 설치 (turtlebot4 시뮬 + Gazebo Fortress 까지 자동)
 cd ~/MediCart/medicart_ws
