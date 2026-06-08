@@ -1,0 +1,34 @@
+cmake_minimum_required(VERSION 3.8)
+project(medi_interfaces)
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+find_package(ament_cmake REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(builtin_interfaces REQUIRED)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/RobotState.msg"
+  "msg/TargetBBox.msg"
+  "msg/MedicineInfo.msg"
+  "msg/PatientInfo.msg"
+  "msg/PatientIdentified.msg"
+  "srv/StartPatrol.srv"
+  "srv/StartMedication.srv"
+  "srv/StartTracking.srv"
+  "srv/MoveHome.srv"
+  "srv/ScanPatient.srv"
+  "srv/ScanMedicine.srv"
+  "srv/GetOcrResult.srv"
+  "srv/GetPrescription.srv"
+  "srv/VerifyMedicine.srv"
+  "srv/UpdateVisitStatus.srv"
+  DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
+)
+
+ament_export_dependencies(rosidl_default_runtime)
+ament_package()

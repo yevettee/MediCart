@@ -1,0 +1,7 @@
+string patient_id
+string room
+string status         # identified / absent / mismatch / no_qr / db_error
+string session_id     # robot_session_id (선택)
+---
+bool success
+string message
