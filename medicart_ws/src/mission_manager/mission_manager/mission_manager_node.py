@@ -19,11 +19,13 @@ from std_msgs.msg import String
 
 from .mission_executor import MissionExecutor
 from .mode_arbiter import ModeArbiter
+from .nav_executor import NavExecutor
 from .system_commands import SYSTEM_ACTIONS
 
 
 # 모드 레지스트리 — 이름: actuation. 외부 노드가 /{ns}/mode/<name>/* 계약 따름.
 MODE_REGISTRY = {
+    "goto": "nav",         # 운영자 좌표 이동(허브 내부 NavExecutor)
     "round": "reactive",   # 회진/추종 (nurse_tracker)
     "patrol": "nav", "errand": "nav", "guide": "nav", "intake": "nav",
 }
@@ -60,6 +62,7 @@ class MissionManagerNode(Node):
         self._front_cone = math.radians(float(self.get_parameter('front_cone_deg').value))
         self._forward_clearance = None
         self._arbiter = ModeArbiter(self, ns, MODE_REGISTRY, self.get_logger())
+        self._nav = NavExecutor(self, ns, self.get_logger())
         self._cmd_pub = self.create_publisher(Twist, f'/{ns}/cmd_vel', 10)
         self._robot_mode_pub = self.create_publisher(String, f'/{ns}/robot_mode', 10)
         self.create_subscription(LaserScan, f'/{ns}/scan', self._on_scan, 10)
@@ -81,6 +84,8 @@ class MissionManagerNode(Node):
         action = req.get('action')
         if action in SYSTEM_ACTIONS:                 # dock/undock/ros_restart/reboot/shutdown
             self._executor.handle(req)
+        elif action == 'goto':                        # 좌표 이동(Nav2 + dock-aware)
+            self._handle_goto(req)
         elif action in MODE_ACTIONS:                  # start/stop/clear (+mode)
             ok, detail = self._arbiter.apply(action, req.get('mode'), req.get('params'))
             self._publish_feedback({'id': req.get('id'),
@@ -90,6 +95,30 @@ class MissionManagerNode(Node):
             self._publish_feedback({'id': req.get('id'), 'status': 'failed',
                                     'detail': 'unknown action: {}'.format(action),
                                     'ts': int(time.time() * 1000)})
+
+    def _handle_goto(self, req):
+        """goto 좌표 이동: arbiter 'goto'(nav) 점거 → NavExecutor 실행 → 종료 시 해제·보고."""
+        mid = req.get('id')
+        params = req.get('params') or {}
+        try:
+            float(params['x']); float(params['y'])
+        except (KeyError, TypeError, ValueError):
+            self._publish_feedback({'id': mid, 'status': 'failed',
+                                    'detail': 'goto requires numeric x,y',
+                                    'ts': int(time.time() * 1000)})
+            return
+        if self._nav.active:                          # 신규 goto 가 기존 이동 선점
+            self._nav.cancel()
+        self._arbiter.apply('start', 'goto', params)  # nav 점거(REACTIVE 선점, cmd_vel 양보)
+
+        def _done(status, detail):
+            self._arbiter.apply('stop', 'goto')
+            self._publish_feedback({'id': mid, 'action': 'goto', 'status': status,
+                                    'detail': detail, 'ts': int(time.time() * 1000)})
+
+        self._nav.start(params, _done)
+        self._publish_feedback({'id': mid, 'action': 'goto', 'status': 'running',
+                                'detail': 'navigating', 'ts': int(time.time() * 1000)})
 
     def _publish_feedback(self, payload):
         msg = String()
