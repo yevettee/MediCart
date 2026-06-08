@@ -10,6 +10,7 @@
 | ROS2 packages | [02_ros2_packages.md](02_ros2_packages.md) | 패키지별 책임, **입력/출력**, launch |
 | ROS2 interfaces | [03_ros2_interfaces.md](03_ros2_interfaces.md) | **Builtin I/F**, `medi_interfaces`, 토픽·서비스·액션 **소유 패키지** |
 | DB schema | [04_db_schema.md](04_db_schema.md) | Firestore/SQL 데이터 모델 |
+| 🖼️ Diagrams | [diagrams/](diagrams/README.md) | **시각 다이어그램**(HTML) — 시스템 아키텍처·노드 맵·워크플로우 |
 
 ## Suggested reading order
 
