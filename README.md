@@ -2,14 +2,21 @@
 
 약품을 카메라에 비추면 OCR로 텍스트를 읽고, 환자의 처방 주사 정보와 비교해서 맞는 약인지 확인하고 Firebase DB에 결과를 저장하는 시스템입니다.
 
-### 🔑 시작 전에 — 키 파일 받기
+### 🔑 시작 전에 — 키 파일 준비
 
-슬랙에서 키 파일 2개를 받아주세요.
+#### Firebase 키 (각자 이미 가지고 있는 파일)
 
-- `gcp_vision_key.json`
-- `firebase_key.json`
+Firebase 키는 별도로 받을 필요 없어요.  
+`~/rokey_ws/db_test/` 안에 `medi-cart-*firebase*.json` 파일이 있으면 **자동으로 찾아서 연결**돼요.
 
-받은 파일을 아래 위치에 넣어주세요. (폴더가 없으면 먼저 만들어주세요)
+파일이 없거나 다른 곳에 있으면 환경변수로 알려주세요:
+```bash
+export FIREBASE_KEY_PATH=~/내파일경로/firebase키파일.json
+```
+
+#### GCP Vision API 키 (슬랙에서 받기)
+
+유료 버전(GCP)을 쓰려면 슬랙에서 `gcp_vision_key.json` 파일을 받아서 아래 위치에 넣어주세요.
 
 ```bash
 mkdir -p ~/ocr_ws/src/ocr_detector/credentials
@@ -18,9 +25,8 @@ mkdir -p ~/ocr_ws/src/ocr_detector/credentials
 | 파일 이름 | 넣어야 할 경로 |
 |-----------|---------------|
 | `gcp_vision_key.json` | `~/ocr_ws/src/ocr_detector/credentials/gcp_vision_key.json` |
-| `firebase_key.json` | `~/ocr_ws/src/ocr_detector/credentials/firebase_key.json` |
 
-> ⚠️ 파일 이름과 경로가 정확히 같아야 해요. 오타 나면 실행이 안 돼요.
+> 무료 버전(EasyOCR)만 쓸 거라면 GCP 키 없어도 돼요.
 
 ### 📦 필요한 패키지 설치
 
