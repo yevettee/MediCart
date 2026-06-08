@@ -78,7 +78,7 @@ class NavExecutor:
     def _send_undock(self):
         if self._busy == "undock":
             return
-        if not self._undock.wait_for_server(timeout_sec=2.0):
+        if not self._undock.wait_for_server(timeout_sec=30.0):  # discovery 혼잡 대응(2s→30s)
             self._finish("failed", "undock 액션서버 미연결")
             return
         self._busy = "undock"
@@ -103,7 +103,10 @@ class NavExecutor:
     def _send_nav(self):
         if self._busy == "nav":
             return
-        if not self._nav.wait_for_server(timeout_sec=3.0):
+        # discovery-server(.106) 혼잡으로 navigate_to_pose 액션서버 탐색이 수십 초
+        # 걸릴 수 있어 3s→30s. wait_for_server 는 graph-event 대기라 블로킹 중에도
+        # discovery 완료 시 즉시 깨어남(보통 즉시 반환, 첫 goto 한정으로만 대기).
+        if not self._nav.wait_for_server(timeout_sec=30.0):
             self._finish("failed", "Nav2 미연결")
             return
         x, y, yaw = self._target
@@ -146,7 +149,7 @@ class NavExecutor:
     def _send_dock(self):
         if self._busy == "dock":
             return
-        if not self._dock.wait_for_server(timeout_sec=2.0):
+        if not self._dock.wait_for_server(timeout_sec=30.0):  # discovery 혼잡 대응(2s→30s)
             self._finish("failed", "dock 액션서버 미연결")
             return
         self._busy = "dock"
