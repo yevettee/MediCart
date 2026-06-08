@@ -13,6 +13,7 @@ import yaml
 from flask import Flask, Response, jsonify, request, send_file
 from flask_cors import CORS
 
+import auth
 import patients as patient_store
 import fb_read
 import ocr
@@ -67,10 +68,11 @@ _FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:3000")
 # 이 Flask가 같은 쿠키를 검증한다. 공개 호스팅(터널) 앞단 접근 통제용(데모 수준).
 # 비밀번호·토큰은 env 필수(.env 참고) — 소스에 기본값 하드코딩하지 않는다.
 INTEL_PASSWORD = os.environ.get("INTEL_PASSWORD")
+ADMIN_PASSWORD = os.environ.get("INTEL_ADMIN_PASSWORD")
 AUTH_COOKIE    = "intel_auth"
 AUTH_TOKEN     = os.environ.get("INTEL_AUTH_TOKEN")
+ADMIN_TOKEN    = os.environ.get("INTEL_ADMIN_TOKEN")
 COOKIE_SECURE  = os.environ.get("COOKIE_SECURE", "0") == "1"   # https(터널)면 1
-_OPEN_PATHS    = {"/api/health", "/api/login", "/api/me"}      # 인증 없이 허용
 if not INTEL_PASSWORD or not AUTH_TOKEN:
     sys.exit("INTEL_PASSWORD / INTEL_AUTH_TOKEN 환경변수를 설정하세요 (.env.example 참고)")
 
@@ -87,11 +89,10 @@ CORS(app, resources={r"/api/*": {"origins": [_FRONTEND_ORIGIN]}}, supports_crede
 
 @app.before_request
 def _require_auth():
-    if request.method == "OPTIONS" or request.path in _OPEN_PATHS:
+    if request.method == "OPTIONS" or not request.path.startswith("/api/"):
         return None
-    if not request.path.startswith("/api/"):
-        return None
-    if not _ct_eq(request.cookies.get(AUTH_COOKIE), AUTH_TOKEN):
+    role = auth.role_for_token(request.cookies.get(AUTH_COOKIE), AUTH_TOKEN, ADMIN_TOKEN)
+    if not auth.allowed(role, auth.required_role_for_path(request.path)):
         return jsonify({"error": "auth required"}), 401
     return None
 
@@ -110,11 +111,12 @@ def health():
 @app.post("/api/login")
 def login():
     body = request.get_json(force=True, silent=True) or {}
-    if not _ct_eq(body.get("password"), INTEL_PASSWORD):
+    role = auth.role_for_password(body.get("password"), INTEL_PASSWORD, ADMIN_PASSWORD)
+    if role is None:
         return jsonify({"ok": False, "error": "비밀번호가 올바르지 않습니다"}), 401
-    resp = jsonify({"ok": True})
-    resp.set_cookie(AUTH_COOKIE, AUTH_TOKEN, max_age=60 * 60 * 12,
-                    httponly=True, samesite="Lax", secure=COOKIE_SECURE)
+    resp = jsonify({"ok": True, "role": role})
+    resp.set_cookie(AUTH_COOKIE, auth.token_for_role(role, AUTH_TOKEN, ADMIN_TOKEN),
+                    max_age=60 * 60 * 12, httponly=True, samesite="Lax", secure=COOKIE_SECURE)
     return resp
 
 
@@ -127,7 +129,8 @@ def logout():
 
 @app.get("/api/me")
 def me():
-    return jsonify({"authed": _ct_eq(request.cookies.get(AUTH_COOKIE), AUTH_TOKEN)})
+    role = auth.role_for_token(request.cookies.get(AUTH_COOKIE), AUTH_TOKEN, ADMIN_TOKEN)
+    return jsonify({"authed": role != "patient", "role": role})
 
 
 # ── 환자 ────────────────────────────────────────────────────────────────────
