@@ -26,6 +26,10 @@ web/backend/venv/
 *.pyc
 serviceAccountKey.json
 **/serviceAccountKey.json
+# GCP Vision OCR 서비스계정 키 (절대 커밋 금지)
+gcp_vision_key.json
+**/gcp_vision_key.json
+medicart_ws/src/ocr_detector/credentials/
 .env
 web/**/.env
 
