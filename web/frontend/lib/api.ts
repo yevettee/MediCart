@@ -1,5 +1,7 @@
 // 백엔드(Flask) 호출 헬퍼.
 // NEXT_PUBLIC_API_BASE 미설정 → dev 기본 :5000. ""(빈문자열) → 같은 오리진(/api, 프로덕션 터널).
+import type { Role } from "@/lib/auth";
+
 const _envBase = process.env.NEXT_PUBLIC_API_BASE;
 export const API_BASE = _envBase === undefined ? "http://localhost:5000" : _envBase;
 
@@ -9,13 +11,35 @@ async function getJSON<T>(path: string): Promise<T> {
   return r.json();
 }
 
-export async function login(password: string): Promise<boolean> {
+export async function login(password: string): Promise<Role | null> {
   const r = await fetch(`${API_BASE}/api/login`, {
     method: "POST", credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password }),
   });
-  return r.ok;
+  if (!r.ok) return null;
+  const d = await r.json().catch(() => ({}));
+  return (d.role as Role) ?? null;
+}
+
+export async function getMe(): Promise<{ authed: boolean; role: Role }> {
+  try {
+    const r = await fetch(`${API_BASE}/api/me`, { cache: "no-store", credentials: "include" });
+    if (!r.ok) return { authed: false, role: "patient" };
+    return await r.json();
+  } catch {
+    return { authed: false, role: "patient" };
+  }
+}
+
+export async function submitIntake(payload: { name: string; room?: string; sections: Record<string, unknown> }) {
+  const r = await fetch(`${API_BASE}/api/intake`, {
+    method: "POST", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) throw new Error(`POST /api/intake → ${r.status}`);
+  return r.json();
 }
 
 export async function logout() {
