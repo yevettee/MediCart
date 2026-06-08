@@ -2,11 +2,18 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
+import { getMe } from "@/lib/api";
+import type { Role } from "@/lib/auth";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [role, setRole] = useState<Role>("patient");
   const path = usePathname();
+
+  // 역할별 사이트 테마: 의료진=골드/옐로, 관리자=그레이 (html[data-role] → globals.css 토큰 override)
+  useEffect(() => { getMe().then((m) => setRole(m.role)).catch(() => setRole("patient")); }, [path]);
+  useEffect(() => { document.documentElement.dataset.role = role; }, [role]);
 
   // 접힘 상태 persist (태블릿/데스크톱)
   useEffect(() => {

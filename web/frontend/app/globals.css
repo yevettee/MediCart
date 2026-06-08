@@ -51,6 +51,25 @@
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
 }
 
+/* ── 역할별 테마 — 브랜드 액센트 토큰만 override(전 컴포넌트 일괄 리테마) ──
+   의료진=골드/옐로, 관리자=그레이. 비로그인(환자)=기본 틸. AppShell이 html[data-role] 설정. */
+html[data-role="staff"] {
+  --teal:        #ca8a04;   /* 액센트(버튼·활성) */
+  --teal-600:    #a16207;   /* hover·라벨(흰 배경 위 텍스트, 대비 양호) */
+  --teal-soft:   #fbeec6;   /* 연한 배경·활성 nav */
+  --canvas:      #f8f6ef;   /* 살짝 따뜻한 배경 */
+  --line:        #e9e4d6;
+  --line-strong: #dcd3bd;
+}
+html[data-role="admin"] {
+  --teal:        #5b6675;   /* 차분한 슬레이트 */
+  --teal-600:    #404a59;
+  --teal-soft:   #eceef2;
+  --canvas:      #eef1f4;   /* 쿨 그레이 배경 */
+  --line:        #e0e4ea;
+  --line-strong: #cdd4dd;
+}
+
 * { box-sizing: border-box; }
 html, body { padding: 0; margin: 0; height: 100%; }
 body {
