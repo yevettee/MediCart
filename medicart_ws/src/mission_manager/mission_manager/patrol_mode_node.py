@@ -9,15 +9,14 @@ status 는 3초 워치독 안에 들도록 매 tick(1Hz) 발행한다.
 
 순찰 흐름:
   active=True → ListRooms('bed')로 병상 waypoint 획득 → 각 방으로 Nav2 이동 →
-  도착 시 identifier 의 current_room 파라미터를 해당 방으로 설정하고 dwell 동안
-  PatientIdentified 를 포착 → 다음 방 → 병상 모두 끝나면 return_home 시 도킹
-  스테이션으로 복귀(식별 없이 주행만) → status 'done'. (dock 자체는 시퀀서가 수행.)
+  도착 시 identifier 에 /{ns}/identify/start(room_id) 발행(스캔 윈도우 개시)하고
+  dwell 동안 PatientIdentified 를 포착 → 다음 방 → 병상 모두 끝나면 return_home 시
+  도킹 스테이션으로 복귀(식별 없이 주행만) → status 'done'. (dock 자체는 시퀀서가 수행.)
   active=False → 진행 중 goal 취소 후 idle.
 
 파라미터:
   namespace      env ROBOT_NAMESPACE (기본 robot6). robot.env 로 robot3 등 통일.
-  dwell_sec      각 방 도착 후 식별 대기 시간(기본 4.0)
-  identifier_node  current_room 을 설정할 노드 이름(기본 patient_identifier_node)
+  dwell_sec      각 방 도착 후 식별 대기 시간(기본 6.0; identifier scan_timeout 보다 길게)
   return_home    순찰 후 도킹 스테이션 복귀 leg 추가 여부(기본 True)
   home_x/y/yaw   복귀(도킹 스테이션) pose — dashboard 'Docking Station' 좌표 기준
 """
@@ -33,8 +32,6 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from geometry_msgs.msg import PoseStamped
 from nav2_msgs.action import NavigateToPose
 from std_msgs.msg import String
-from rcl_interfaces.srv import SetParameters
-from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
 
 from medi_interfaces.srv import ListRooms
 from medi_interfaces.msg import PatientIdentified
@@ -67,8 +64,8 @@ class PatrolMode(Node):
         super().__init__('patrol_mode_node')
         self.declare_parameter('namespace', os.environ.get('ROBOT_NAMESPACE', 'robot6'))
         self.declare_parameter('mode_name', 'patrol')
-        self.declare_parameter('dwell_sec', 4.0)
-        self.declare_parameter('identifier_node', 'patient_identifier_node')
+        # 도착 후 식별 대기. identifier 의 scan_timeout(기본 5s)보다 길게 둔다.
+        self.declare_parameter('dwell_sec', 6.0)
         # True: dashboard 기준 config waypoint(BED_WAYPOINTS) 사용 / False: RTDB ListRooms
         self.declare_parameter('use_config_waypoints', True)
         # 순찰 종료 후 도킹 스테이션 복귀 leg(식별 없이 주행만) — dock 은 시퀀서가 수행.
@@ -81,7 +78,6 @@ class PatrolMode(Node):
         self.ns = str(self.get_parameter('namespace').value).strip('/')
         self.name = str(self.get_parameter('mode_name').value)
         self.dwell = float(self.get_parameter('dwell_sec').value)
-        self.id_node = str(self.get_parameter('identifier_node').value)
         self.use_config = bool(self.get_parameter('use_config_waypoints').value)
         self.return_home = bool(self.get_parameter('return_home').value)
         self.home_wp = {'room_id': 'station', 'identify': False, 'patient_id': '',
@@ -96,8 +92,8 @@ class PatrolMode(Node):
         # Nav2 / DB / 식별
         self._nav = ActionClient(self, NavigateToPose, f'/{self.ns}/navigate_to_pose')
         self._rooms_cli = self.create_client(ListRooms, f'/{self.ns}/db/list_rooms')
-        self._setparam_cli = self.create_client(
-            SetParameters, f'/{self.ns}/{self.id_node}/set_parameters')
+        # 병상 도착 시 identifier 에 '스캔 시작'(room_id) 트리거 발행 → 5s QR 윈도우.
+        self._scan_pub = self.create_publisher(String, f'/{self.ns}/identify/start', 10)
         self.create_subscription(PatientIdentified, f'/{self.ns}/patient_identified',
                                  self._on_identified, 10)
 
@@ -227,22 +223,19 @@ class PatrolMode(Node):
             self._go_next()
             return
         self.get_logger().info(f'[patrol] {wp["room_id"]} 도착 → 식별 대기 {self.dwell:.0f}s')
-        self._set_current_room(wp['room_id'])     # identifier 에 현재 방 통지(best-effort)
+        self._trigger_scan(wp['room_id'])         # identifier 에 스캔 시작(도착) 통지
         self._last_ident = None
         self._dwell_left = self.dwell
         self.state = DWELL
         self._detail = f'identifying at {wp["room_id"]}'
 
     # ── 식별 연동 ────────────────────────────────────────────────────────
-    def _set_current_room(self, room_id):
-        if not self._setparam_cli.service_is_ready():
-            self.get_logger().warn(
-                f'[patrol] {self.id_node}/set_parameters 미가용 — current_room 생략')
-            return
-        req = SetParameters.Request()
-        pval = ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=room_id)
-        req.parameters = [Parameter(name='current_room', value=pval)]
-        self._setparam_cli.call_async(req)
+    def _trigger_scan(self, room_id):
+        """병상 도착 시 identifier 에 스캔 시작(room_id) 통지 — 5s QR 윈도우 개시."""
+        msg = String()
+        msg.data = room_id
+        self._scan_pub.publish(msg)
+        self.get_logger().info(f'[patrol] identify/start 발행 room={room_id}')
 
     def _on_identified(self, msg):
         self._last_ident = msg
