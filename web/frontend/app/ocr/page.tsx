@@ -1,92 +1,490 @@
 "use client";
-import { useRef, useState } from "react";
-import { ocr } from "@/lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  getPatients, getInjections, verifyInjection, ocr as runOcr,
+  type Patient, type Injection,
+} from "@/lib/api";
+
+type InjEntry = { id: string } & Injection;
+
+type VerifyResult = { match: boolean; status: string; reason: string } | null;
 
 export default function OcrPage() {
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [preview, setPreview] = useState<string>("");
+  /* 환자/주사 목록 */
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [pid, setPid] = useState("");
+  const [injections, setInjections] = useState<InjEntry[]>([]);
+  const [injId, setInjId] = useState("");
+
+  /* 웹캠 */
   const videoRef = useRef<HTMLVideoElement>(null);
   const [camOn, setCamOn] = useState(false);
+  const [camErr, setCamErr] = useState("");
+  const [camInfo, setCamInfo] = useState("");
 
-  async function run(blob: Blob) {
-    setBusy(true); setErr(""); setText("");
-    setPreview(URL.createObjectURL(blob));
+  /* OCR 모드 */
+  const [ocrMode, setOcrMode] = useState<"single" | "realtime">("single");
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scanningRef = useRef(false); // 동시 요청 방지
+
+  /* OCR */
+  const [ocrText, setOcrText] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [scanErr, setScanErr] = useState("");
+
+  /* 검증 */
+  const [verifying, setVerifying] = useState(false);
+  const [result, setResult] = useState<VerifyResult>(null);
+
+  /* 환자 로드 */
+  useEffect(() => {
+    getPatients().then(setPatients).catch(() => {});
+  }, []);
+
+  /* 환자 변경 → 주사 목록 갱신 */
+  useEffect(() => {
+    setInjections([]);
+    setInjId("");
+    setResult(null);
+    setOcrText("");
+    if (!pid) return;
+    getInjections(pid)
+      .then((raw) => {
+        const list: InjEntry[] = Object.entries(raw || {}).map(([id, inj]) => ({ id, ...inj }));
+        setInjections(list);
+        if (list.length > 0) setInjId(list[0].id);
+      })
+      .catch(() => {});
+  }, [pid]);
+
+  /* 웹캠 시작 — USB 외부 카메라 우선 선택 */
+  const startCam = useCallback(async () => {
+    setCamErr("");
     try {
-      const r = await ocr(blob);
-      setText(r.text);
-    } catch (e) {
-      setErr(String(e));
-    } finally {
-      setBusy(false);
+      // 1단계: 권한 취득 (라벨 접근에 필요) — 일단 기본 카메라로 열기
+      const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+
+      // 2단계: 열거 후 USB 카메라 찾기
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter((d) => d.kind === "videoinput");
+      const usbCam = cams.find(
+        (d) => !/integrated|facetime|built.?in/i.test(d.label)
+      );
+
+      // 3단계: temp가 이미 USB 캠인지 확인 → 같으면 그대로 재사용
+      const tempDeviceId = tempStream.getVideoTracks()[0]?.getSettings()?.deviceId;
+      let stream = tempStream;
+
+      if (usbCam && tempDeviceId !== usbCam.deviceId) {
+        // 다른 카메라라면 교체 (stop 후 딜레이 없이 바로 재요청하면 검은 화면)
+        tempStream.getTracks().forEach((t) => t.stop());
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: usbCam.deviceId }, width: 1280, height: 720 },
+        });
+      }
+
+      const v = videoRef.current;
+      if (v) {
+        v.srcObject = stream;
+        // hidden 상태에서 play()하면 검은 화면 → 먼저 보이게 하고 재생
+        setCamOn(true);
+        await v.play();
+        const label = stream.getVideoTracks()[0]?.label || usbCam?.label || cams[0]?.label || "카메라";
+        setCamInfo(label);
+      }
+    } catch {
+      setCamErr("웹캠을 열 수 없습니다. 브라우저 권한을 확인하세요.");
     }
-  }
+  }, []);
 
-  function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (f) run(f);
-  }
-
-  async function startCam() {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
-      setCamOn(true);
-    }
-  }
-
-  function snap() {
+  /* 공통 캡처 + OCR — 단일/실시간 모드 모두 사용 */
+  const captureAndOcr = useCallback(async (clearPrev = false) => {
     const v = videoRef.current;
-    if (!v) return;
-    const c = document.createElement("canvas");
-    c.width = v.videoWidth; c.height = v.videoHeight;
-    c.getContext("2d")!.drawImage(v, 0, 0);
-    c.toBlob((b) => { if (b) run(b); }, "image/png");
+    if (!v || !camOn || scanningRef.current) return;
+    scanningRef.current = true;
+    setScanning(true);
+    setScanErr("");
+    if (clearPrev) { setOcrText(""); setResult(null); }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = v.videoWidth;
+    canvas.height = v.videoHeight;
+    canvas.getContext("2d")!.drawImage(v, 0, 0);
+    canvas.toBlob(async (blob) => {
+      if (!blob) { setScanErr("캡처 실패"); setScanning(false); scanningRef.current = false; return; }
+      try {
+        const r = await runOcr(blob);
+        setOcrText(r.text);
+      } catch (e) {
+        setScanErr(String(e));
+      } finally {
+        setScanning(false);
+        scanningRef.current = false;
+      }
+    }, "image/png");
+  }, [camOn]);
+
+  /* 실시간 OCR 인터벌 관리 */
+  useEffect(() => {
+    if (ocrMode === "realtime" && camOn) {
+      captureAndOcr();
+      intervalRef.current = setInterval(() => captureAndOcr(), 2000);
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    }
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [ocrMode, camOn, captureAndOcr]);
+
+  /* 단일 스캔 (버튼) */
+  async function handleScan() {
+    if (!camOn) { setScanErr("웹캠을 먼저 켜세요."); return; }
+    await captureAndOcr(true);
   }
+
+  /* 검증 */
+  async function handleVerify() {
+    if (!pid || !injId || !ocrText) return;
+    const inj = injections.find((i) => i.id === injId);
+    if (!inj) return;
+    setVerifying(true); setResult(null);
+    // DB 키가 약품명 또는 약물명 둘 다 허용
+    const medicineName = (inj.약품명 || inj["약물명"] || "") as string;
+    try {
+      const res = await verifyInjection(pid, injId, ocrText, medicineName);
+      setResult(res);
+      // 로컬 목록 상태 즉시 반영
+      setInjections((prev) =>
+        prev.map((i) => i.id === injId ? { ...i, status: res.status as Injection["status"] } : i)
+      );
+    } catch (e) {
+      setResult({ match: false, status: "error", reason: String(e) });
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  const selectedInj = injections.find((i) => i.id === injId);
+  const selectedPat = patients.find((p) => p.id === pid);
 
   return (
-    <div className="p-7 max-w-4xl">
+    <div className="p-6 max-w-5xl">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold text-ink">약품 OCR</h1>
-        <p className="text-ink-3 text-sm mt-1">이미지 업로드 또는 웹캠 스냅샷으로 약품 텍스트를 인식합니다.</p>
+        <h1 className="text-2xl font-bold text-ink">약품 OCR 검증</h1>
+        <p className="text-ink-3 text-sm mt-1">
+          환자 선택 → 주사 처방 확인 → 웹캠 스캔 → 약품 적합 여부 검증 → DB 업데이트
+        </p>
       </header>
 
       <div className="grid md:grid-cols-2 gap-5">
-        {/* 입력 카드 */}
-        <section className="bg-surface border border-line rounded-2xl p-5">
-          <h2 className="font-semibold text-ink mb-3">입력</h2>
-          <label className="block">
-            <span className="text-sm text-ink-3">이미지 파일</span>
-            <input type="file" accept="image/*" onChange={onFile}
-              className="mt-1 block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-teal file:text-white file:px-3 file:py-2" />
-          </label>
+        {/* ── 왼쪽: 웹캠 + 스캔 ── */}
+        <div className="flex flex-col gap-4">
+          <section className="card p-5">
+            <h2 className="font-semibold text-ink mb-3 flex items-center gap-2">
+              <CameraIcon />
+              웹캠 스캔
+            </h2>
 
-          <div className="mt-4">
+            {/* OCR 모드 토글 */}
+            <div className="flex rounded-xl border border-line overflow-hidden text-xs font-semibold mb-3">
+              <button
+                onClick={() => setOcrMode("single")}
+                className={`flex-1 py-2 transition-colors ${
+                  ocrMode === "single" ? "bg-teal text-white" : "text-ink-2 hover:bg-surface-2"
+                }`}>
+                단일 스캔
+              </button>
+              <button
+                onClick={() => setOcrMode("realtime")}
+                className={`flex-1 py-2 transition-colors ${
+                  ocrMode === "realtime" ? "bg-teal text-white" : "text-ink-2 hover:bg-surface-2"
+                }`}>
+                실시간 OCR
+              </button>
+            </div>
+
             {!camOn ? (
               <button onClick={startCam}
-                className="rounded-lg bg-surface-2 text-ink px-3 py-2 text-sm hover:bg-line">웹캠 켜기</button>
-            ) : (
-              <button onClick={snap}
-                className="rounded-lg bg-teal text-white px-3 py-2 text-sm">스냅샷 인식</button>
+                className="w-full rounded-xl border-2 border-dashed border-line py-10 text-ink-3 text-sm hover:border-teal hover:text-teal transition-colors flex flex-col items-center gap-2">
+                <CameraIcon big />
+                <span>웹캠 켜기</span>
+              </button>
+            ) : null}
+
+            <video
+              ref={videoRef}
+              className={`w-full rounded-xl bg-black ${camOn ? "block" : "hidden"}`}
+              autoPlay muted playsInline
+            />
+
+            {camErr && <p className="text-red text-xs mt-2">{camErr}</p>}
+            {camInfo && !camErr && (
+              <p className="text-green text-xs mt-2 flex items-center gap-1">
+                <span>●</span> {camInfo}
+              </p>
             )}
-            <video ref={videoRef} className={`mt-3 w-full rounded-xl bg-black ${camOn ? "" : "hidden"}`} muted playsInline />
-          </div>
 
-          {preview && <img src={preview} alt="미리보기" className="mt-3 w-full rounded-xl border border-line" />}
-        </section>
+            {/* 단일 스캔 버튼 */}
+            {camOn && ocrMode === "single" && (
+              <button
+                onClick={handleScan}
+                disabled={scanning}
+                className="mt-3 w-full rounded-xl bg-teal text-white py-2.5 text-sm font-semibold hover:bg-teal-600 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+                {scanning ? <Spinner /> : <ScanIcon />}
+                {scanning ? "인식 중…" : "스캔 & OCR"}
+              </button>
+            )}
 
-        {/* 결과 카드 */}
-        <section className="bg-surface border border-line rounded-2xl p-5">
-          <h2 className="font-semibold text-ink mb-3">인식 결과</h2>
-          {busy && <p className="text-ink-3 text-sm">인식 중…</p>}
-          {err && <p className="text-red-600 text-sm">{err}</p>}
-          {!busy && !err && (
-            <pre className="whitespace-pre-wrap text-ink text-sm min-h-[8rem]">{text || "이미지를 입력하세요."}</pre>
-          )}
-        </section>
+            {/* 실시간 OCR 상태 표시 */}
+            {camOn && ocrMode === "realtime" && (
+              <div className="mt-3 flex items-center gap-2 rounded-xl border border-teal/30 bg-teal-soft px-4 py-2.5 text-sm">
+                {scanning
+                  ? <><Spinner /><span className="text-teal font-semibold">인식 중…</span></>
+                  : <><span className="text-teal animate-pulse">●</span><span className="text-teal font-semibold">실시간 OCR 활성</span></>
+                }
+                <span className="text-ink-3 text-xs ml-auto">2초 간격</span>
+              </div>
+            )}
+
+            {scanErr && <p className="text-red text-xs mt-2">{scanErr}</p>}
+          </section>
+
+          {/* OCR 결과 */}
+          <section className="card p-5">
+            <h2 className="font-semibold text-ink mb-2 flex items-center gap-2">
+              <TextIcon />
+              OCR 결과
+              {ocrMode === "realtime" && camOn && (
+                <span className="ml-auto text-xs text-ink-3 font-normal">실시간 갱신 중</span>
+              )}
+            </h2>
+            <pre className="whitespace-pre-wrap text-ink text-sm min-h-[6rem] bg-surface-2 rounded-xl p-3 border border-line font-mono leading-relaxed">
+              {ocrText || <span className="text-ink-3">스캔 후 텍스트가 표시됩니다.</span>}
+            </pre>
+          </section>
+        </div>
+
+        {/* ── 오른쪽: 환자/주사 선택 + 검증 결과 ── */}
+        <div className="flex flex-col gap-4">
+          {/* 환자 선택 */}
+          <section className="card p-5">
+            <h2 className="font-semibold text-ink mb-3 flex items-center gap-2">
+              <PatientIcon />
+              환자 선택
+            </h2>
+            <label className="block">
+              <span className="eyebrow mb-1.5 block">등록 환자</span>
+              <select
+                value={pid}
+                onChange={(e) => setPid(e.target.value)}
+                className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-teal">
+                <option value="">-- 환자를 선택하세요 --</option>
+                {patients.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.성명} ({p.id})
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {selectedPat && (
+              <div className="mt-3 rounded-xl bg-teal-soft border border-teal/20 p-3 text-sm flex gap-4">
+                <span className="text-teal-600 font-semibold">{selectedPat.성명}</span>
+                {selectedPat.나이 && <span className="text-ink-2">{selectedPat.나이}세</span>}
+                {selectedPat.혈액형 && <span className="text-ink-2">{selectedPat.혈액형}</span>}
+                {"약물 알레르기" in selectedPat && selectedPat["약물 알레르기"] && (
+                  <span className="text-red text-xs bg-red-soft px-2 py-0.5 rounded-lg">
+                    알레르기: {String(selectedPat["약물 알레르기"])}
+                  </span>
+                )}
+              </div>
+            )}
+          </section>
+
+          {/* 주사 처방 선택 */}
+          <section className="card p-5">
+            <h2 className="font-semibold text-ink mb-3 flex items-center gap-2">
+              <InjectIcon />
+              주사 처방
+            </h2>
+
+            {!pid ? (
+              <p className="text-ink-3 text-sm">환자를 선택하면 주사 처방 목록이 나타납니다.</p>
+            ) : injections.length === 0 ? (
+              <p className="text-ink-3 text-sm">등록된 주사 처방이 없습니다.</p>
+            ) : (
+              <>
+                <label className="block mb-3">
+                  <span className="eyebrow mb-1.5 block">처방 선택</span>
+                  <select
+                    value={injId}
+                    onChange={(e) => { setInjId(e.target.value); setResult(null); }}
+                    className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-teal">
+                    {injections.map((inj) => (
+                      <option key={inj.id} value={inj.id}>
+                        {(inj.약품명 || inj["약물명"] as string)} {inj.용량 ? `(${inj.용량})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {selectedInj && (
+                  <div className="rounded-xl border border-line p-3 text-sm space-y-1.5">
+                    <Row label="약품명" value={(selectedInj.약품명 || selectedInj["약물명"] as string)} />
+                    {selectedInj.용량 && <Row label="용량" value={selectedInj.용량} />}
+                    {selectedInj.투약경로 && <Row label="경로" value={selectedInj.투약경로} />}
+                    {selectedInj.투약시간 && <Row label="시간" value={selectedInj.투약시간} />}
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="text-ink-3">상태</span>
+                      <StatusBadge status={selectedInj.status} />
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+
+          {/* 검증 버튼 + 결과 */}
+          <section className="card p-5">
+            <h2 className="font-semibold text-ink mb-3 flex items-center gap-2">
+              <CheckIcon />
+              투약 검증
+            </h2>
+
+            <button
+              onClick={handleVerify}
+              disabled={!pid || !injId || !ocrText || verifying}
+              className="w-full rounded-xl bg-teal text-white py-3 text-sm font-semibold hover:bg-teal-600 disabled:opacity-40 transition-colors flex items-center justify-center gap-2">
+              {verifying ? <Spinner /> : <CheckIcon />}
+              {verifying ? "검증 중…" : "약품 적합성 검증 & DB 저장"}
+            </button>
+
+            {!ocrText && pid && injId && (
+              <p className="text-ink-3 text-xs mt-2 text-center">스캔을 먼저 실행하세요.</p>
+            )}
+
+            {result && (
+              <div className={`mt-4 rounded-2xl p-4 border ${
+                result.match
+                  ? "bg-green-soft border-green/30"
+                  : "bg-red-soft border-red/30"
+              }`}>
+                <div className="flex items-center gap-2 mb-2">
+                  {result.match ? <MatchIcon /> : <MismatchIcon />}
+                  <span className={`font-bold text-base ${result.match ? "text-green" : "text-red"}`}>
+                    {result.match ? "투약 준비 완료" : "약품 불일치 — 재확인 필요"}
+                  </span>
+                </div>
+                <p className="text-ink-2 text-sm leading-relaxed">{result.reason}</p>
+                <p className="text-ink-3 text-xs mt-2">DB 상태: <strong>{result.status}</strong></p>
+              </div>
+            )}
+          </section>
+        </div>
       </div>
     </div>
+  );
+}
+
+/* ── 보조 컴포넌트 ─────────────────────────────────────────────────── */
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-2">
+      <span className="text-ink-3 w-16 shrink-0">{label}</span>
+      <span className="text-ink font-medium">{value}</span>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status?: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    confirmed: { label: "투약 준비 완료", cls: "bg-green-soft text-green" },
+    mismatch:  { label: "약품 불일치", cls: "bg-red-soft text-red" },
+    pending:   { label: "투약 대기중", cls: "bg-amber-soft text-amber" },
+  };
+  const m = map[status || "pending"] ?? map.pending;
+  return (
+    <span className={`text-xs font-semibold px-2 py-0.5 rounded-lg ${m.cls}`}>{m.label}</span>
+  );
+}
+
+function Spinner() {
+  return (
+    <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+    </svg>
+  );
+}
+
+function CameraIcon({ big }: { big?: boolean }) {
+  const s = big ? 32 : 17;
+  return (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+      <circle cx="12" cy="13" r="4" />
+    </svg>
+  );
+}
+
+function ScanIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M5 12h14" />
+    </svg>
+  );
+}
+
+function TextIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="5" y="3" width="14" height="18" rx="2.4" /><path d="M9 8h6M9 12h6M9 16h3" />
+    </svg>
+  );
+}
+
+function PatientIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="8" r="3.2" /><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6" />
+    </svg>
+  );
+}
+
+function InjectIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m18 2 4 4-4 4M14 6h8M6 12l6-6M2 22 12 12M8 16l-4 4" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
+function MatchIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#18a259" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-4" />
+    </svg>
+  );
+}
+
+function MismatchIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#df4448" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" /><path d="m15 9-6 6M9 9l6 6" />
+    </svg>
   );
 }

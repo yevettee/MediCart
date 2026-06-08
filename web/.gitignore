@@ -1,0 +1,24 @@
+# 환경변수 및 인증 키 — 절대 커밋 금지
+backend/.env
+backend/.env.*
+frontend/.env.local
+frontend/.env.*.local
+
+# GCP / Firebase 키 파일
+**/*gcp*.json
+**/*firebase*.json
+**/*serviceAccount*.json
+**/*service_account*.json
+backend/credentials/
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+backend/venv/
+backend/.venv/
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/out/

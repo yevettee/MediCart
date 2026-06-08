@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import { getPatients, Patient, addVisit } from "@/lib/api";
 
 // 필드 키는 RTDB visit 레코드 키와 정확히 일치 → 저장 시 환자정보 페이지에 그대로 표시된다.
@@ -44,15 +45,55 @@ const SECTIONS: { n: string; title: string; fields: Field[] }[] = [
 const today = () => new Date().toISOString().slice(0, 10);
 
 export default function IntakePage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const qrPid = searchParams.get("pid") ?? "";
+
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [pid, setPid] = useState("");
+  const [pid, setPid] = useState(qrPid);
   const [form, setForm] = useState<Record<string, unknown>>({ 방문일: today() });
   const [saved, setSaved] = useState<null | "ok" | "err">(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    getPatients().then((ps) => { setPatients(ps); if (ps[0]) setPid(ps[0].id); }).catch(() => {});
-  }, []);
+    getPatients().then((ps) => {
+      setPatients(ps);
+      if (!qrPid && ps[0]) setPid(ps[0].id);
+    }).catch(() => {});
+  }, [qrPid]);
+
+  /* qrPid가 바뀌면(새 QR 스캔) pid·폼 즉시 리셋 */
+  useEffect(() => {
+    if (qrPid) {
+      setPid(qrPid);
+      setForm({ 방문일: today() });
+      setSaved(null);
+    }
+  }, [qrPid]);
+
+  /* QR 경유 진입 시 새 환자 스캔 감지 → 해당 환자 문진표로 자동 전환 */
+  useEffect(() => {
+    if (!qrPid) return;
+    let initialized = false;
+    let currentPid = qrPid;
+
+    async function poll() {
+      try {
+        const r = await fetch("/api/display/patient", { cache: "no-store" });
+        if (!r.ok) return;
+        const { pid: newPid } = await r.json();
+        if (!initialized) { initialized = true; currentPid = newPid ?? qrPid; return; }
+        if (newPid && newPid !== currentPid) {
+          currentPid = newPid;
+          // router.push는 같은 페이지에서 리마운트를 보장하지 않으므로 강제 이동
+          window.location.href = `/intake?pid=${newPid}`;
+        }
+      } catch { /* ignore */ }
+    }
+
+    const timer = setInterval(poll, 2000);
+    return () => clearInterval(timer);
+  }, [qrPid, router]);
 
   const patient = useMemo(() => patients.find((p) => p.id === pid), [patients, pid]);
   // 환자 선택 시 진료과를 그 환자의 주 진료과로 프리필(미입력 시)
@@ -67,8 +108,14 @@ export default function IntakePage() {
     setBusy(true);
     try {
       const r = await addVisit(pid, { ...form, 방문일: form.방문일 || today() });
-      setSaved(r?.ok ? "ok" : "err");
-      if (r?.ok) setForm({ 방문일: today(), 진료과: patient?.["주 진료과"] || "" });
+      if (r?.ok) {
+        setSaved("ok");
+        setForm({ 방문일: today(), 진료과: patient?.["주 진료과"] || "" });
+        // QR 경유로 왔으면 저장 후 대기 화면으로 복귀
+        if (qrPid) setTimeout(() => { window.location.href = "/display"; }, 1500);
+      } else {
+        setSaved("err");
+      }
     } catch { setSaved("err"); }
     finally { setBusy(false); }
   }

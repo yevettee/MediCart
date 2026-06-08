@@ -17,10 +17,51 @@ import patients as patient_store
 import fb_read
 import ocr
 
+# ── 약품명 매칭 (한글→영문 별명) ────────────────────────────────────────────────
+_MEDICINE_ALIASES: dict[str, list[str]] = {
+    "호르몬 주사": ["hormone", "insulin", "estrogen", "testosterone", "hgh", "growth hormone"],
+    "비타민 주사": ["vitamin", "ascorbic", "riboflavin", "thiamine", "b12", "vit"],
+    "스테로이드 주사": ["steroid", "dexamethasone", "methylprednisolone", "hydrocortisone", "prednisolone"],
+    "항생제": ["antibiotic", "amoxicillin", "penicillin", "cephalosporin", "ciprofloxacin"],
+    "진통제": ["painkiller", "analgesic", "acetaminophen", "ibuprofen", "morphine", "tramadol"],
+    "수액": ["saline", "dextrose", "lactated", "ringer", "ns", "d5w", "normal saline"],
+    "항암제": ["chemotherapy", "taxol", "cisplatin", "doxorubicin", "vincristine"],
+}
+
+
+def _check_medicine(prescription: str, ocr_text: str) -> tuple[bool, str]:
+    """처방 약품명이 OCR 텍스트에 포함되는지 확인 (한글·영문 별명 모두 허용)."""
+    prx = " ".join(prescription.split()).lower()
+    # 줄바꿈·연속 공백을 단일 공백으로 정규화 (OCR이 줄바꿈으로 단어를 쪼갤 수 있음)
+    ocr_normalized = " ".join(ocr_text.split()).lower()
+    # 공백 제거 버전도 준비 (붙여쓰기 대응)
+    ocr_nospace = re.sub(r"\s+", "", ocr_normalized)
+    prx_nospace = re.sub(r"\s+", "", prx)
+
+    # 직접 포함 여부 (정규화 + 공백제거 둘 다 시도)
+    if prx in ocr_normalized or prx_nospace in ocr_nospace:
+        return True, f"'{prescription}' 직접 확인됨"
+
+    ocr = ocr_normalized
+
+    # 한글 별명 그룹 검색
+    for kor_name, aliases in _MEDICINE_ALIASES.items():
+        group_names = [kor_name.lower()] + [a.lower() for a in aliases]
+        prx_in_group = any(g in prx or prx in g for g in group_names)
+        if prx_in_group:
+            for alias in aliases:
+                if alias in ocr:
+                    return True, f"'{prescription}' → '{alias}' 별명 확인됨"
+            # 처방이 이 그룹에 속하지만 OCR에서 못 찾은 경우
+            break
+
+    return False, f"'{prescription}'을(를) OCR 텍스트에서 확인할 수 없습니다"
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 등록번호 형식 검증 — 키 주입·IDOR 방지 (P-YYYY-NNNN)
 _PID_RE = re.compile(r"^P-\d{4}-\d{4}$")
-_FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:3000")
+_FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:3000,http://localhost:3001")
+
 
 # ── 데모 비밀번호 게이트 ─────────────────────────────────────────────────────
 # 단일 공유 비밀번호. 맞으면 서버가 쿠키(AUTH_TOKEN)를 발급하고, Next 미들웨어와
@@ -30,7 +71,7 @@ INTEL_PASSWORD = os.environ.get("INTEL_PASSWORD")
 AUTH_COOKIE    = "intel_auth"
 AUTH_TOKEN     = os.environ.get("INTEL_AUTH_TOKEN")
 COOKIE_SECURE  = os.environ.get("COOKIE_SECURE", "0") == "1"   # https(터널)면 1
-_OPEN_PATHS    = {"/api/health", "/api/login", "/api/me"}      # 인증 없이 허용
+_OPEN_PATHS    = {"/api/health", "/api/login", "/api/me", "/api/display/current"}  # 인증 없이 허용
 if not INTEL_PASSWORD or not AUTH_TOKEN:
     sys.exit("INTEL_PASSWORD / INTEL_AUTH_TOKEN 환경변수를 설정하세요 (.env.example 참고)")
 
@@ -42,7 +83,8 @@ def _ct_eq(a, b):
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024   # 이미지 업로드 허용(OCR)
 # CORS: 프론트 오리진만 허용 + 쿠키 자격증명(로그인 쿠키). 와일드카드 금지.
-CORS(app, resources={r"/api/*": {"origins": [_FRONTEND_ORIGIN]}}, supports_credentials=True)
+_ALLOWED_ORIGINS = [o.strip() for o in _FRONTEND_ORIGIN.split(",") if o.strip()]
+CORS(app, resources={r"/api/*": {"origins": _ALLOWED_ORIGINS}}, supports_credentials=True)
 
 
 @app.before_request
@@ -51,9 +93,13 @@ def _require_auth():
         return None
     if not request.path.startswith("/api/"):
         return None
-    if not _ct_eq(request.cookies.get(AUTH_COOKIE), AUTH_TOKEN):
-        return jsonify({"error": "auth required"}), 401
-    return None
+    if _ct_eq(request.cookies.get(AUTH_COOKIE), AUTH_TOKEN):
+        return None
+    # Next.js 서버사이드 route handler용: Cookie 대신 Authorization Bearer 허용
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer ") and _ct_eq(auth_header[7:], AUTH_TOKEN):
+        return None
+    return jsonify({"error": "auth required"}), 401
 
 
 # 맵 파일 위치(있으면 서빙). 없으면 available:false.
@@ -108,6 +154,35 @@ def patient(pid):
     return jsonify(p)
 
 
+# ── 주사/투약 검증 ────────────────────────────────────────────────────────────
+@app.get("/api/patients/<pid>/injections")
+def patient_injections(pid):
+    if not _PID_RE.match(pid):
+        return jsonify({"error": "invalid id"}), 400
+    inj = fb_read.get_injections(pid)
+    return jsonify(inj)
+
+
+@app.post("/api/patients/<pid>/injections/<inj_id>/verify")
+def verify_injection(pid, inj_id):
+    if not _PID_RE.match(pid):
+        return jsonify({"error": "invalid id"}), 400
+    body = request.get_json(force=True, silent=True) or {}
+    ocr_text = str(body.get("ocr_text", "")).strip()
+    prescription = str(body.get("prescription", "")).strip()
+    if not ocr_text or not prescription:
+        return jsonify({"error": "ocr_text and prescription are required"}), 400
+
+    match, reason = _check_medicine(prescription, ocr_text)
+    status = "confirmed" if match else "mismatch"
+    try:
+        fb_read.update_injection_status(pid, inj_id, status, ocr_text)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({"ok": True, "match": match, "status": status, "reason": reason})
+
+
 # ── AMR 상태/스트림 ──────────────────────────────────────────────────────────
 @app.get("/api/amrs")
 def amrs():
@@ -157,6 +232,23 @@ def update_patient(pid):
     return jsonify(patient_store.get_patient(pid))
 
 
+# ── 병실 디스플레이 현재 환자 ────────────────────────────────────────────────────
+@app.get("/api/display/current")
+def display_current():
+    pid = fb_read.get_display_patient()
+    return jsonify({"pid": pid})
+
+
+@app.post("/api/display/current")
+def display_set():
+    body = request.get_json(force=True, silent=True) or {}
+    pid = str(body.get("pid", "")).strip()
+    if not _PID_RE.match(pid):
+        return jsonify({"error": "invalid id"}), 400
+    fb_read.set_display_patient(pid)
+    return jsonify({"ok": True, "pid": pid})
+
+
 # ── OCR ─────────────────────────────────────────────────────────────────────
 @app.post("/api/ocr")
 def api_ocr():
@@ -191,6 +283,12 @@ def robot_missions(ns):
     return jsonify({"missions": fb_read.get_missions(ns)})
 
 
+# ── 순회 대상 ────────────────────────────────────────────────────────────────
+@app.get("/api/targets")
+def targets():
+    return jsonify({"targets": fb_read.get_targets()})
+
+
 # ── 병실→pose + 맵 ───────────────────────────────────────────────────────────
 @app.get("/api/rooms")
 def rooms():
@@ -221,6 +319,12 @@ def map_png():
         return send_file(MAP_PNG, mimetype="image/png")
     return jsonify({"error": "no map"}), 404
 
+
+try:
+    if fb_read.seed_targets():
+        print("[app] RTDB targets 시드 완료")
+except Exception as exc:        # noqa: BLE001 — 시드 실패해도 서비스는 계속
+    print(f"[app] targets 시드 건너뜀: {exc}")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), threaded=True)
