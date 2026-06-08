@@ -10,13 +10,16 @@ status 는 3초 워치독 안에 들도록 매 tick(1Hz) 발행한다.
 순찰 흐름:
   active=True → ListRooms('bed')로 병상 waypoint 획득 → 각 방으로 Nav2 이동 →
   도착 시 identifier 의 current_room 파라미터를 해당 방으로 설정하고 dwell 동안
-  PatientIdentified 를 포착 → 다음 방 → 모두 끝나면 status 'done'.
+  PatientIdentified 를 포착 → 다음 방 → 병상 모두 끝나면 return_home 시 도킹
+  스테이션으로 복귀(식별 없이 주행만) → status 'done'. (dock 자체는 시퀀서가 수행.)
   active=False → 진행 중 goal 취소 후 idle.
 
 파라미터:
   namespace      env ROBOT_NAMESPACE (기본 robot6). robot.env 로 robot3 등 통일.
   dwell_sec      각 방 도착 후 식별 대기 시간(기본 4.0)
   identifier_node  current_room 을 설정할 노드 이름(기본 patient_identifier_node)
+  return_home    순찰 후 도킹 스테이션 복귀 leg 추가 여부(기본 True)
+  home_x/y/yaw   복귀(도킹 스테이션) pose — dashboard 'Docking Station' 좌표 기준
 """
 import json
 import math
@@ -68,12 +71,23 @@ class PatrolMode(Node):
         self.declare_parameter('identifier_node', 'patient_identifier_node')
         # True: dashboard 기준 config waypoint(BED_WAYPOINTS) 사용 / False: RTDB ListRooms
         self.declare_parameter('use_config_waypoints', True)
+        # 순찰 종료 후 도킹 스테이션 복귀 leg(식별 없이 주행만) — dock 은 시퀀서가 수행.
+        # 좌표 출처: dashboard DEFAULT_TARGETS 'Docking Station'(dock_after).
+        self.declare_parameter('return_home', True)
+        self.declare_parameter('home_x', -8.0)
+        self.declare_parameter('home_y', -6.0)
+        self.declare_parameter('home_yaw', -0.00142)
 
         self.ns = str(self.get_parameter('namespace').value).strip('/')
         self.name = str(self.get_parameter('mode_name').value)
         self.dwell = float(self.get_parameter('dwell_sec').value)
         self.id_node = str(self.get_parameter('identifier_node').value)
         self.use_config = bool(self.get_parameter('use_config_waypoints').value)
+        self.return_home = bool(self.get_parameter('return_home').value)
+        self.home_wp = {'room_id': 'station', 'identify': False, 'patient_id': '',
+                        'x': float(self.get_parameter('home_x').value),
+                        'y': float(self.get_parameter('home_y').value),
+                        'yaw': float(self.get_parameter('home_yaw').value)}
 
         # 모드 계약 I/O
         self._status_pub = self.create_publisher(String, f'/{self.ns}/mode/{self.name}/status', 10)
@@ -107,11 +121,14 @@ class PatrolMode(Node):
         except (ValueError, TypeError):
             return
         active = bool(data.get('active'))
-        if active and not self.active:
-            self._start()
-        elif not active and self.active:
-            self._cancel('deactivated')
+        was_active = self.active
+        # active 를 먼저 반영해야 _start()→_go_next() 의 'if not self.active: return'
+        # 가드를 통과한다(아니면 첫 주행 시도가 즉시 bail → FETCH 에 멈춤).
         self.active = active
+        if active and not was_active:
+            self._start()
+        elif not active and was_active:
+            self._cancel('deactivated')
 
     def _start(self):
         self.state = FETCH
@@ -123,6 +140,7 @@ class PatrolMode(Node):
             self.get_logger().info(
                 f'[patrol] 활성화 → config waypoint {len(self._wps)}개(dashboard 좌표): '
                 f'{[w["room_id"] for w in self._wps]}')
+            self._append_home()
             self._idx = 0
             self._go_next()
             return
@@ -146,8 +164,18 @@ class PatrolMode(Node):
                      for i in range(len(resp.room_ids))]
         self.get_logger().info(f'[patrol] waypoint {len(self._wps)}개: '
                                f'{[w["room_id"] for w in self._wps]}')
+        self._append_home()
         self._idx = 0
         self._go_next()
+
+    def _append_home(self):
+        """순찰 종료 후 도킹 스테이션 복귀 waypoint(식별 없음)를 마지막에 추가."""
+        if not self.return_home:
+            return
+        self._wps.append(dict(self.home_wp))
+        self.get_logger().info(
+            f'[patrol] 복귀 waypoint 추가 → station '
+            f'({self.home_wp["x"]:.2f},{self.home_wp["y"]:.2f})')
 
     # ── waypoint 순회 ────────────────────────────────────────────────────
     def _go_next(self):
@@ -155,8 +183,10 @@ class PatrolMode(Node):
             return
         if self._idx >= len(self._wps):
             self.state = DONE
-            self._detail = f'patrol complete ({len(self._wps)} rooms)'
-            self.get_logger().info('[patrol] 모든 병상 순회 완료 → done')
+            beds = sum(1 for w in self._wps if w.get('identify', True))
+            tail = ', returned to station' if self.return_home else ''
+            self._detail = f'patrol complete ({beds} rooms{tail})'
+            self.get_logger().info(f'[patrol] 모든 병상 순회 완료{tail} → done')
             return
         wp = self._wps[self._idx]
         if not self._nav.wait_for_server(timeout_sec=2.0):
@@ -190,6 +220,12 @@ class PatrolMode(Node):
         if not self.active:
             return
         wp = self._wps[self._idx]
+        if not wp.get('identify', True):
+            # 복귀(스테이션) 도착 — 식별 dwell 없이 다음(→ DONE), dock 은 시퀀서가 수행.
+            self.get_logger().info(f'[patrol] {wp["room_id"]} 도착(복귀) → dwell 생략')
+            self._idx += 1
+            self._go_next()
+            return
         self.get_logger().info(f'[patrol] {wp["room_id"]} 도착 → 식별 대기 {self.dwell:.0f}s')
         self._set_current_room(wp['room_id'])     # identifier 에 현재 방 통지(best-effort)
         self._last_ident = None
