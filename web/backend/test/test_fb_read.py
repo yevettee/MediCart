@@ -159,3 +159,21 @@ def test_list_missions_filters_meta_and_sorts():
     assert [m["id"] for m in out] == ["m2", "m3", "m1"]   # ts 내림차순, _meta 제외
     assert all(not m["id"].startswith("_") for m in out)
     assert list_missions(None) == [] and list_missions("x") == []
+
+
+def test_mission_payload_goto_valid():
+    import fb_read
+    p = fb_read.mission_payload("goto", {"x": -8, "y": -6, "yaw": -0.0014,
+                                         "dock_after": True, "label": "Dock"}, 1000)
+    assert p["action"] == "goto" and p["status"] == "pending"
+    assert p["params"]["x"] == -8.0 and p["params"]["y"] == -6.0
+    assert p["params"]["dock_after"] is True and p["params"]["label"] == "Dock"
+
+
+def test_mission_payload_goto_missing_coords_rejected():
+    import fb_read
+    import pytest
+    with pytest.raises(ValueError):
+        fb_read.mission_payload("goto", {"x": 1.0}, 1000)      # y 없음
+    with pytest.raises(ValueError):
+        fb_read.mission_payload("goto", {"x": "a", "y": "b"}, 1000)   # 비수치

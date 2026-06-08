@@ -141,6 +141,23 @@ def valid_robot_ns(ns):
     return ns in ROBOT_NAMESPACES
 
 
+def _validate_goto_params(params):
+    """goto params 검증·정규화 → {x,y,yaw,(dock_after),(label)}."""
+    if not isinstance(params, dict):
+        raise ValueError("goto params required")
+    try:
+        x = float(params["x"])
+        y = float(params["y"])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("goto requires numeric x,y")
+    out = {"x": x, "y": y, "yaw": float(params.get("yaw", 0.0))}
+    if params.get("dock_after"):
+        out["dock_after"] = True
+    if params.get("label"):
+        out["label"] = str(params["label"])[:60]
+    return out
+
+
 def mission_payload(action, params, ts, mode=None):
     """{ns}/mission_pool 에 push 될 명령(화이트리스트 검증).
 
@@ -149,6 +166,9 @@ def mission_payload(action, params, ts, mode=None):
     """
     if action in MISSION_ACTIONS:
         return {"action": action, "params": params or {}, "status": "pending", "ts": int(ts)}
+    if action == "goto":
+        return {"action": "goto", "params": _validate_goto_params(params),
+                "status": "pending", "ts": int(ts)}
     if action in MODE_ACTIONS:
         if action != "clear" and mode not in MODE_NAMES:
             raise ValueError("invalid mode")
