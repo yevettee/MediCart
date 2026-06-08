@@ -10,6 +10,8 @@ distinguishes every path (identified / absent / mismatch / no_qr / db_error);
 the dashboard surfaces the failure statuses to the operator.
 """
 
+import os
+
 import numpy as np
 
 import rclpy
@@ -26,10 +28,8 @@ from .person_detector import PersonDetector
 from .qr_scanner import QrScanner
 
 
-# Topic names under the /robot6 namespace.
-IMAGE_TOPIC = '/robot6/oakd/image_raw'
-DEPTH_TOPIC = '/robot6/oakd/depth_image'
-RESULT_TOPIC = '/robot6/patient_identified'
+# 토픽/서비스 이름은 namespace 파라미터(env ROBOT_NAMESPACE)로 구성한다.
+# 카메라는 image_topic 파라미터로 oakd/webcam 자유롭게 지정 가능.
 
 # Status values published in PatientIdentified.status.
 STATUS_IDENTIFIED = 'identified'
@@ -62,9 +62,18 @@ class IdentifierNode(Node):
         """Set up publishers, subscriptions, helpers and the pipeline timer."""
         super().__init__('patient_identifier_node')
 
+        self.declare_parameter('namespace', os.environ.get('ROBOT_NAMESPACE', 'robot6'))
         self.declare_parameter('current_room', '')
         self.declare_parameter('period_sec', 2.0)
         self.declare_parameter('model_path', 'yolo11n.pt')
+        ns = str(self.get_parameter('namespace').value).strip('/')
+        # 카메라 토픽 — oakd 기본, webcam 등은 image_topic 파라미터로 덮어쓰기.
+        self.declare_parameter('image_topic', f'/{ns}/oakd/rgb/image_raw')
+        self.declare_parameter('depth_topic', f'/{ns}/oakd/depth_image')
+        image_topic = str(self.get_parameter('image_topic').value)
+        depth_topic = str(self.get_parameter('depth_topic').value)
+        result_topic = f'/{ns}/patient_identified'
+        get_prescription_srv = f'/{ns}/db/get_prescription'
 
         self._latest_image = None
         self._latest_depth = None
@@ -77,18 +86,21 @@ class IdentifierNode(Node):
         # inside the timer callback without deadlocking the executor.
         client_group = ReentrantCallbackGroup()
         timer_group = MutuallyExclusiveCallbackGroup()
-        self._validator = PatientValidator(self, callback_group=client_group)
+        self._validator = PatientValidator(
+            self, service_name=get_prescription_srv, callback_group=client_group)
 
-        self._result_pub = self.create_publisher(PatientIdentified, RESULT_TOPIC, 10)
+        self._result_pub = self.create_publisher(PatientIdentified, result_topic, 10)
 
-        self.create_subscription(Image, IMAGE_TOPIC, self._on_image, 10)
-        self.create_subscription(Image, DEPTH_TOPIC, self._on_depth, 10)
+        self.create_subscription(Image, image_topic, self._on_image, 10)
+        self.create_subscription(Image, depth_topic, self._on_depth, 10)
 
         period = self.get_parameter('period_sec').value
         self._timer = self.create_timer(period, self._run_pipeline,
                                         callback_group=timer_group)
 
-        self.get_logger().info('patient_identifier_node started')
+        self.get_logger().info(
+            'patient_identifier_node started (ns={}, image_topic={}, srv={})'
+            .format(ns, image_topic, get_prescription_srv))
 
     def _on_image(self, msg):
         """Cache the latest RGB frame."""
