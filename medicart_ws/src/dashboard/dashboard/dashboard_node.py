@@ -12,7 +12,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Web dashboard node for sending Nav2 goals from a map UI."""
+"""Web dashboard node for sending Nav2 goals from a map UI.
+
+코드 리뷰 때 이 파일은 아래 흐름으로 보면 된다.
+
+1. 브라우저가 Python HTTP server에 접속한다.
+2. ``DashboardRequestHandler``가 ``/api/...`` 요청을 받는다.
+3. 실제 ROS 작업은 ``DashboardNode`` 메서드가 수행한다.
+4. 결과/로그/카메라/AMR 위치는 ``EventBroker``를 통해 SSE로 브라우저에 다시 간다.
+
+즉 이 파일은 "웹 서버 + ROS2 노드"가 한 파일에 붙어 있는 구조다.
+"""
 
 from __future__ import annotations
 
@@ -47,6 +57,9 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CompressedImage
 
 
+# 웹 지도에 처음부터 표시되는 기본 목적지 목록.
+# 각 항목은 브라우저로 전달되고, 사용자가 마커를 누르면 /api/goals 로 다시 들어온다.
+# x/y/yaw 는 map frame 기준 좌표이며, 새 맵을 따면 여기 값을 먼저 갱신하면 된다.
 DEFAULT_TARGETS = (
     {
         'name': '101호 1번',
@@ -110,7 +123,12 @@ class NavigationTarget:
 
 
 class EventBroker:
-    """Keeps recent logs and fans out live dashboard events."""
+    """Keeps recent logs and fans out live dashboard events.
+
+    브라우저는 ``/api/events``로 SSE(Server-Sent Events) 연결을 열어둔다.
+    이 broker는 ROS callback에서 생긴 로그/위치/카메라 이벤트를 모든 브라우저
+    listener에게 fan-out 한다.
+    """
 
     def __init__(self, history_size: int = 80):
         self._history: deque[dict[str, Any]] = deque(maxlen=history_size)
@@ -124,6 +142,13 @@ class EventBroker:
         event_type: str = 'log',
         store: bool = False,
     ) -> dict[str, Any]:
+        """새 이벤트를 만들고 현재 연결된 브라우저들에게 전달한다.
+
+        Args:
+            payload: 브라우저가 받을 실제 데이터.
+            event_type: app.js에서 구분하는 이벤트 이름(log, pose, rgbd 등).
+            store: True면 나중에 접속한 브라우저도 최근 로그를 다시 받는다.
+        """
         event = {
             'id': self._next_id,
             'event_type': event_type,
@@ -143,6 +168,7 @@ class EventBroker:
         return event
 
     def add_listener(self, replay_history: bool = True) -> Queue:
+        """SSE 연결 하나를 등록하고, 이 연결이 받을 Queue를 돌려준다."""
         listener: Queue = Queue()
         with self._lock:
             if replay_history:
@@ -152,6 +178,7 @@ class EventBroker:
         return listener
 
     def remove_listener(self, listener: Queue) -> None:
+        """브라우저 연결이 끊겼을 때 listener Queue를 제거한다."""
         with self._lock:
             self._listeners.discard(listener)
 
@@ -168,11 +195,23 @@ class DashboardHttpServer(ThreadingHTTPServer):
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    """Serves the map UI and JSON/SSE endpoints."""
+    """Serves the map UI and JSON/SSE endpoints.
+
+    이 클래스는 "웹 요청을 어느 DashboardNode 메서드로 보낼지"만 결정한다.
+    ROS action/service를 직접 호출하지 않고, 항상 ``self.node``로 넘긴다.
+    """
 
     server_version = 'MediCartDashboard/0.1'
 
     def do_GET(self) -> None:
+        """브라우저의 GET 요청 처리.
+
+        - ``/``: dashboard 화면 HTML
+        - ``/api/config``: 맵 정보와 기본 목적지
+        - ``/api/status``: 현재 goal/dock/camera 설정
+        - ``/api/events``: 실시간 로그/위치/영상 SSE 스트림
+        - ``/maps/...``: 지도 이미지와 yaml
+        """
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
 
@@ -195,6 +234,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self._serve_static_file(path.lstrip('/'))
 
     def do_POST(self) -> None:
+        """브라우저의 POST 요청 처리.
+
+        - ``/api/goals``: 맵 클릭/마커 클릭 -> Nav2 goal 전송
+        - ``/api/cancel``: 현재 Nav2/Dock/Undock goal 취소
+        - ``/api/commands``: Dock, Undock, ROS Restart, Reboot, Shutdown
+        - ``/api/captures``: 브라우저에 보이는 RGB/Depth 이미지를 파일로 저장
+        """
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
 
@@ -244,6 +290,11 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self.node.get_logger().debug(fmt % args)
 
     def _read_json_body(self, max_length: int = 8192) -> dict[str, Any] | None:
+        """POST body를 JSON dict로 읽는다.
+
+        잘못된 JSON이면 여기서 HTTP error를 바로 응답하고 None을 돌려준다.
+        그래서 do_POST의 각 endpoint는 payload가 None인지 확인만 하면 된다.
+        """
         try:
             length = int(self.headers.get('Content-Length', '0'))
         except ValueError:
@@ -280,6 +331,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         return payload
 
     def _handle_events(self) -> None:
+        """SSE 연결을 유지하며 EventBroker 이벤트를 브라우저로 흘려보낸다."""
         listener = self.node.log_broker.add_listener()
         self.send_response(HTTPStatus.OK)
         self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
@@ -310,6 +362,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self._serve_file(self.node.static_root, relative_path)
 
     def _serve_file(self, root: Path, relative_path: str) -> None:
+        """정적 파일을 서빙한다.
+
+        ``relative_to`` 검사로 ``../`` 같은 path traversal을 막는다.
+        """
         safe_path = relative_path or 'index.html'
         candidate = (root / safe_path).resolve()
 
@@ -350,11 +406,21 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
 
 class DashboardNode(Node):
-    """Publishes operator navigation goals and hosts the dashboard UI."""
+    """Publishes operator navigation goals and hosts the dashboard UI.
+
+    이 노드의 책임은 크게 네 가지다.
+
+    1. Python HTTP server를 띄워 dashboard 웹 화면을 제공한다.
+    2. 브라우저 요청을 받아 Nav2/Dock/Undock action으로 변환한다.
+    3. AMCL pose, dock status, RGB-D topic을 구독해 브라우저로 보낸다.
+    4. 작업 결과를 로그 이벤트로 만들어 화면 오른쪽 로그 패널에 보여준다.
+    """
 
     def __init__(self):
         super().__init__('dashboard_node')
 
+        # 실행할 때 바꿀 수 있는 ROS parameter들.
+        # 예: action_name:=/robot6/navigate_to_pose 를 주면 robot6 namespace를 자동 추론한다.
         self.declare_parameter('host', '0.0.0.0')
         self.declare_parameter('port', 8080)
         self.declare_parameter('action_name', '/navigate_to_pose')
@@ -392,6 +458,8 @@ class DashboardNode(Node):
         self._last_pose: dict[str, float] | None = None
         self._is_docked: bool | None = None
 
+        # action_name에서 namespace를 뽑아 기본 topic/action 이름을 만든다.
+        # action_name=/robot6/navigate_to_pose 이면 robot_namespace=/robot6 이 된다.
         action_name = self.get_parameter('action_name').value
         robot_namespace = self._namespace_from_action_name(action_name)
         default_rgb = self._join_namespace(
@@ -424,6 +492,7 @@ class DashboardNode(Node):
             or default_depth
         )
 
+        # ROS action clients: 브라우저 버튼/맵 클릭이 최종적으로 여기로 들어온다.
         self._action_client = ActionClient(self, NavigateToPose, action_name)
         self._dock_action_client = ActionClient(
             self,
@@ -435,6 +504,7 @@ class DashboardNode(Node):
             Undock,
             self._undock_action_name,
         )
+        # ROS subscriptions: 로봇 상태/위치/카메라를 받아 SSE 이벤트로 브라우저에 전달한다.
         self._dock_status_sub = self.create_subscription(
             DockStatus,
             self._dock_status_topic,
@@ -459,6 +529,8 @@ class DashboardNode(Node):
             self._handle_depth_frame,
             qos_profile_sensor_data,
         )
+        # message_filters는 RGB와 Depth frame 시간이 비슷할 때 rgbd 이벤트로 묶어준다.
+        # 동시에 direct subscription도 두어 한쪽만 들어와도 화면에 보이게 한다.
         self._rgb_sub = Subscriber(
             self,
             CompressedImage,
@@ -478,6 +550,7 @@ class DashboardNode(Node):
         )
         self._rgbd_sync.registerCallback(self._handle_rgbd)
 
+        # 웹에서 지도 좌표 변환에 쓰는 map metadata와 HTTP server 시작.
         self._map_config = self._load_map_config()
         self._http_server: DashboardHttpServer | None = None
         self._http_thread: threading.Thread | None = None
@@ -488,6 +561,10 @@ class DashboardNode(Node):
         self._publish_log(f'Depth topic: {self._depth_topic}')
 
     def get_client_config(self) -> dict[str, Any]:
+        """브라우저가 처음 로딩할 때 받는 설정값.
+
+        app.js의 ``load()``가 ``/api/config``를 호출해서 map/targets/status를 받는다.
+        """
         return {
             'map': self._map_config,
             'targets': list(DEFAULT_TARGETS),
@@ -495,6 +572,10 @@ class DashboardNode(Node):
         }
 
     def get_status(self) -> dict[str, Any]:
+        """현재 dashboard/robot 상태를 JSON으로 만든다.
+
+        ``/api/status`` 응답과 ``/api/config`` 초기 status에 같이 쓰인다.
+        """
         with self._state_lock:
             goal = self._last_goal
             goal_state = self._goal_state
@@ -519,6 +600,12 @@ class DashboardNode(Node):
 
     @staticmethod
     def _namespace_from_action_name(action_name: str) -> str:
+        """절대 action 이름에서 namespace를 추론한다.
+
+        예:
+            /robot6/navigate_to_pose -> /robot6
+            /navigate_to_pose -> ''
+        """
         normalized = '/' + action_name.strip('/')
         parts = normalized.strip('/').split('/')
         if len(parts) <= 1:
@@ -527,6 +614,7 @@ class DashboardNode(Node):
 
     @staticmethod
     def _join_namespace(namespace: str, name: str) -> str:
+        """namespace와 topic/action base name을 안전하게 합친다."""
         if namespace:
             return f'{namespace.rstrip("/")}/{name}'
         return f'/{name}'
@@ -538,6 +626,10 @@ class DashboardNode(Node):
         return (Path(__file__).resolve().parent / 'captures').resolve()
 
     def _handle_dock_status(self, message: DockStatus) -> None:
+        """Create3 dock 상태 topic callback.
+
+        상태가 바뀌면 오른쪽 로그 패널에 "도킹됨/언도킹됨"을 보여준다.
+        """
         with self._state_lock:
             previous = self._is_docked
             self._is_docked = message.is_docked
@@ -550,6 +642,11 @@ class DashboardNode(Node):
             self._publish_log(f'로봇 dock 상태 변경: {state}')
 
     def _handle_pose(self, message: PoseWithCovarianceStamped) -> None:
+        """AMCL pose callback.
+
+        ROS의 quaternion 방향을 yaw로 바꿔 브라우저에 보낸다.
+        app.js는 이 값을 지도 위 AMR marker 위치와 방향으로 그린다.
+        """
         pose = message.pose.pose
         yaw = self._yaw_from_quaternion(pose.orientation)
         data = {
@@ -566,6 +663,7 @@ class DashboardNode(Node):
         rgb_msg: CompressedImage,
         depth_msg: CompressedImage,
     ) -> None:
+        """동기화된 RGB/Depth frame을 SSE ``rgbd`` 이벤트로 보낸다."""
         fps = max(float(self.get_parameter('camera_fps').value), 1.0)
         now = time.monotonic()
         if now - self._last_camera_time < 1.0 / fps:
@@ -583,6 +681,7 @@ class DashboardNode(Node):
         )
 
     def _handle_rgb_frame(self, message: CompressedImage) -> None:
+        """RGB 단독 frame을 SSE ``rgb`` 이벤트로 보낸다."""
         fps = max(float(self.get_parameter('camera_fps').value), 1.0)
         now = time.monotonic()
         if now - self._last_rgb_time < 1.0 / fps:
@@ -594,6 +693,7 @@ class DashboardNode(Node):
         )
 
     def _handle_depth_frame(self, message: CompressedImage) -> None:
+        """Depth 단독 frame을 SSE ``depth`` 이벤트로 보낸다."""
         fps = max(float(self.get_parameter('camera_fps').value), 1.0)
         now = time.monotonic()
         if now - self._last_depth_time < 1.0 / fps:
@@ -608,6 +708,11 @@ class DashboardNode(Node):
         self,
         payload: dict[str, Any],
     ) -> tuple[bool, str]:
+        """상단 command 버튼 처리.
+
+        브라우저 app.js의 ``runCommand()``가 ``/api/commands``로 보낸 command를 받는다.
+        dock/undock은 ROS action으로 처리하고, ros_restart/reboot/shutdown은 SSH로 처리한다.
+        """
         command = str(payload.get('command') or '')
         if command == 'dock':
             self._publish_log('수동 Dock 요청')
@@ -629,6 +734,7 @@ class DashboardNode(Node):
         return False, 'Unknown command'
 
     def save_capture(self, payload: dict[str, Any]) -> tuple[bool, str]:
+        """브라우저 화면에 표시된 RGB/Depth 이미지를 파일로 저장한다."""
         rgb_data = payload.get('rgb')
         depth_data = payload.get('depth')
         if not rgb_data and not depth_data:
@@ -663,6 +769,10 @@ class DashboardNode(Node):
             raise ValueError('Invalid capture image data') from exc
 
     def _send_undock_only(self) -> None:
+        """수동 Undock 버튼용.
+
+        목적지 이동 없이 Create3 Undock action만 보낸다.
+        """
         if not self._undock_action_client.wait_for_server(timeout_sec=0.2):
             self._publish_log('Undock 액션 서버 연결 대기 중...')
             if not self._undock_action_client.wait_for_server(timeout_sec=4.8):
@@ -717,6 +827,7 @@ class DashboardNode(Node):
         label: str,
         sudo_command: str,
     ) -> tuple[bool, str]:
+        """ROS Restart/Reboot/Shutdown처럼 로봇 PC에 SSH로 보내는 명령을 시작한다."""
         self._publish_log(f'{label} 요청')
         thread = threading.Thread(
             target=self._run_remote_command_worker,
@@ -753,6 +864,7 @@ class DashboardNode(Node):
             self._publish_log(f'{label} 실패: {detail}', level='error')
 
     def _compressed_image_data_url(self, message: CompressedImage) -> str:
+        """CompressedImage를 브라우저 img 태그에서 바로 쓸 수 있는 data URL로 바꾼다."""
         image_bytes = bytes(message.data)
         mime, payload = self._extract_image_payload(
             message.format,
@@ -792,6 +904,17 @@ class DashboardNode(Node):
         self,
         payload: dict[str, Any],
     ) -> tuple[bool, str]:
+        """맵 클릭/마커 클릭으로 들어온 목적지를 Nav2 goal로 보낸다.
+
+        흐름:
+            app.js sendGoal()
+            -> HTTP POST /api/goals
+            -> DashboardRequestHandler.do_POST()
+            -> 이 메서드
+            -> 필요하면 Undock
+            -> Nav2 NavigateToPose action
+            -> 도착 후 dock_after이면 Dock action
+        """
         try:
             target = self._target_from_payload(payload)
         except ValueError as exc:
@@ -847,6 +970,7 @@ class DashboardNode(Node):
         self,
         target: NavigationTarget,
     ) -> tuple[bool, str]:
+        """Undock 없이 Nav2 NavigateToPose goal만 보낸다."""
         if not self._action_client.wait_for_server(timeout_sec=0.2):
             self._publish_log('Nav2 액션 서버 연결 대기 중...')
             if not self._action_client.wait_for_server(timeout_sec=4.8):
@@ -877,6 +1001,7 @@ class DashboardNode(Node):
         target: NavigationTarget,
         strict: bool,
     ) -> None:
+        """도킹 상태에서 일반 목적지를 눌렀을 때 Undock 후 Nav2 이동을 이어서 실행한다."""
         if strict:
             self._publish_log('도킹 상태 감지: undock 후 이동을 시작합니다.')
         else:
@@ -914,6 +1039,7 @@ class DashboardNode(Node):
         target: NavigationTarget,
         strict: bool,
     ) -> None:
+        """Undock action server가 goal을 accept/reject했을 때 호출된다."""
         try:
             goal_handle = future.result()
         except Exception as exc:  # noqa: BLE001
@@ -955,6 +1081,7 @@ class DashboardNode(Node):
         target: NavigationTarget,
         strict: bool,
     ) -> None:
+        """Undock이 끝났을 때 호출되고, 성공하면 이어서 Nav2 goal을 보낸다."""
         try:
             result = future.result()
         except Exception as exc:  # noqa: BLE001
@@ -992,6 +1119,7 @@ class DashboardNode(Node):
         self._send_navigation_only(target)
 
     def _send_dock(self, target: NavigationTarget) -> None:
+        """Docking Station 도착 후 Create3 Dock action을 보낸다."""
         if not self._dock_action_client.wait_for_server(timeout_sec=0.2):
             self._publish_log('Dock 액션 서버 연결 대기 중...')
             if not self._dock_action_client.wait_for_server(timeout_sec=4.8):
@@ -1014,6 +1142,7 @@ class DashboardNode(Node):
         )
 
     def _handle_dock_response(self, future, target: NavigationTarget) -> None:
+        """Dock action server가 goal을 accept/reject했을 때 호출된다."""
         try:
             goal_handle = future.result()
         except Exception as exc:  # noqa: BLE001
@@ -1041,6 +1170,7 @@ class DashboardNode(Node):
         )
 
     def _handle_dock_feedback(self, feedback_msg) -> None:
+        """Dock 진행 중 feedback callback."""
         now = time.monotonic()
         if now - self._last_dock_feedback_log_time < 2.0:
             return
@@ -1056,6 +1186,7 @@ class DashboardNode(Node):
         goal_handle,
         target: NavigationTarget,
     ) -> None:
+        """Dock 최종 결과 callback."""
         try:
             result = future.result()
         except Exception as exc:  # noqa: BLE001
@@ -1088,6 +1219,7 @@ class DashboardNode(Node):
             self._goal_state = 'failed'
 
     def cancel_current_goal(self) -> tuple[bool, str]:
+        """현재 진행 중인 Nav2/Dock/Undock action을 취소한다."""
         with self._state_lock:
             goal_handle = self._goal_handle
             dock_goal_handle = self._dock_goal_handle
@@ -1129,6 +1261,10 @@ class DashboardNode(Node):
         return super().destroy_node()
 
     def _start_http_server(self) -> None:
+        """dashboard 웹 서버를 별도 thread에서 시작한다.
+
+        ROS spin과 HTTP request 처리가 서로 막히지 않도록 HTTP server는 thread로 분리한다.
+        """
         host = self.get_parameter('host').value
         port = int(self.get_parameter('port').value)
         self._http_server = DashboardHttpServer(
@@ -1161,6 +1297,7 @@ class DashboardNode(Node):
         self._http_thread = None
 
     def _handle_goal_response(self, future, target: NavigationTarget) -> None:
+        """Nav2가 goal을 accept/reject했을 때 호출된다."""
         try:
             goal_handle = future.result()
         except Exception as exc:  # noqa: BLE001
@@ -1191,6 +1328,10 @@ class DashboardNode(Node):
         )
 
     def _handle_feedback(self, feedback_msg) -> None:
+        """Nav2 이동 중 feedback callback.
+
+        너무 많은 로그가 쌓이지 않도록 1초에 한 번 정도만 거리 정보를 화면에 보낸다.
+        """
         now = time.monotonic()
         if now - self._last_feedback_log_time < 1.0:
             return
@@ -1219,6 +1360,10 @@ class DashboardNode(Node):
         goal_handle,
         target: NavigationTarget,
     ) -> None:
+        """Nav2 최종 결과 callback.
+
+        성공/취소/실패 로그를 만들고, Docking Station 목표였다면 이어서 dock을 시작한다.
+        """
         try:
             result = future.result()
         except Exception as exc:  # noqa: BLE001
@@ -1286,6 +1431,7 @@ class DashboardNode(Node):
         level: str = 'info',
         data: dict[str, Any] | None = None,
     ) -> None:
+        """ROS logger와 웹 로그 패널 양쪽에 같은 메시지를 남긴다."""
         self.log_broker.publish(
             {
                 'level': level,
@@ -1303,6 +1449,7 @@ class DashboardNode(Node):
             self.get_logger().info(message)
 
     def _make_pose(self, target: NavigationTarget) -> PoseStamped:
+        """NavigationTarget(x, y, yaw)을 Nav2가 받는 PoseStamped로 변환한다."""
         pose = PoseStamped()
         pose.header.frame_id = self.get_parameter('map_frame').value
         pose.header.stamp = self.get_clock().now().to_msg()
@@ -1317,6 +1464,7 @@ class DashboardNode(Node):
         self,
         payload: dict[str, Any],
     ) -> NavigationTarget:
+        """브라우저 JSON payload를 NavigationTarget dataclass로 검증/변환한다."""
         default_yaw = float(self.get_parameter('default_yaw').value)
 
         try:
@@ -1354,6 +1502,7 @@ class DashboardNode(Node):
         }
 
     def _load_map_config(self) -> dict[str, Any]:
+        """웹 지도 표시와 좌표 변환에 필요한 map metadata를 읽는다."""
         yaml_path = self.maps_root / 'ninety.yaml'
         map_info = self._read_map_yaml(yaml_path)
 
@@ -1377,6 +1526,7 @@ class DashboardNode(Node):
         }
 
     def _read_map_yaml(self, path: Path) -> dict[str, Any]:
+        """PyYAML이 있으면 yaml parser로, 없으면 단순 parser로 map yaml을 읽는다."""
         try:
             import yaml  # type: ignore[import-untyped]
         except ImportError:
@@ -1400,6 +1550,7 @@ class DashboardNode(Node):
 
     @staticmethod
     def _parse_simple_yaml_value(value: str) -> Any:
+        """PyYAML이 없을 때 쓰는 아주 작은 yaml value parser."""
         if value.startswith('[') and value.endswith(']'):
             items = value[1:-1].split(',')
             return [float(item.strip()) for item in items if item.strip()]
@@ -1417,6 +1568,7 @@ class DashboardNode(Node):
 
     @staticmethod
     def _read_pgm_size(path: Path) -> tuple[int, int]:
+        """PGM header에서 width/height만 읽는다."""
         data = path.read_bytes()
         index = 0
 

@@ -8,6 +8,7 @@
   </head>
   <body>
     <main class="dashboard">
+      <!-- 상단: 현재 상태 문구와 로봇 운영 명령 버튼들 -->
       <header class="topbar">
         <div>
           <h1>MediCart Dashboard</h1>
@@ -22,6 +23,7 @@
         </nav>
       </header>
 
+      <!-- 지도 영역: Python이 제공한 map 이미지와 target marker를 app.js가 그린다 -->
       <section class="map-card" aria-label="2D map">
         <div class="section-head">
           <strong>2D Map</strong>
@@ -35,6 +37,7 @@
         </div>
       </section>
 
+      <!-- 카메라 영역: ROS CompressedImage topic을 dashboard_node.py가 SSE로 보내고 app.js가 표시한다 -->
       <section class="camera-card" aria-label="RGB-D view">
         <div class="section-head">
           <strong>RGB-D View</strong>
@@ -60,6 +63,7 @@
         </div>
       </section>
 
+      <!-- 로그 영역: ROS action 진행 상황과 에러를 SSE log 이벤트로 받아 누적 표시한다 -->
       <section class="log-card" aria-label="Realtime logs">
         <div class="section-head">
           <strong>Logs</strong>
