@@ -2,6 +2,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { login } from "@/lib/api";
+import { requiredRoleForRoute, roleAtLeast, landingFor } from "@/lib/auth";
 
 function LoginForm() {
   const router = useRouter();
@@ -13,13 +14,13 @@ function LoginForm() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true); setErr(false);
-    const ok = await login(pw).catch(() => false);
+    const role = await login(pw).catch(() => null);
     setBusy(false);
-    if (ok) {
-      // 오픈 리다이렉트 방지: 같은 사이트 상대경로만 허용
-      const next = params.get("next") || "/";
-      const safe = next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/";
-      router.replace(safe);
+    if (role) {
+      const next = params.get("next") || "";
+      const safe = next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\");
+      const dest = safe && roleAtLeast(role, requiredRoleForRoute(next)) ? next : landingFor(role);
+      router.replace(dest);
     } else { setErr(true); setPw(""); }
   }
 
