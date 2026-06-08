@@ -1,0 +1,18 @@
+[Unit]
+Description=MediCart web Next.js frontend (:3000)
+After=network.target
+
+[Service]
+User=rokey
+WorkingDirectory=/home/rokey/MediCart/web/frontend
+Environment=NODE_ENV=production
+# INTEL_AUTH_TOKEN(쿠키 검증용) 등은 .env에서 주입 — 소스에 토큰 하드코딩 금지.
+EnvironmentFile=/home/rokey/MediCart/web/backend/.env
+# .env 의 PORT=5000(백엔드용)을 프론트 3000으로 덮어쓴다 — EnvironmentFile 뒤에 와야 우선함.
+Environment=PORT=3000
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

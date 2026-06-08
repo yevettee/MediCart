@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MediCart Dashboard</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="dashboard">
+      <header class="topbar">
+        <div>
+          <h1>MediCart Dashboard</h1>
+          <p id="statusText">연결 중</p>
+        </div>
+        <nav class="command-bar" aria-label="Robot commands">
+          <button data-command="dock" type="button">Dock</button>
+          <button data-command="undock" type="button">Undock</button>
+          <button data-command="ros_restart" type="button">ROS Restart</button>
+          <button data-command="reboot" type="button">Reboot</button>
+          <button data-command="shutdown" type="button">Shutdown</button>
+        </nav>
+      </header>
+
+      <section class="map-card" aria-label="2D map">
+        <div class="section-head">
+          <strong>2D Map</strong>
+          <span id="poseText">AMR pose waiting</span>
+        </div>
+        <div class="map-wrap" id="mapWrap">
+          <div class="map-stage" id="mapStage">
+            <img id="mapImage" alt="Scanned 2D map" />
+            <div class="marker-layer" id="markerLayer"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="camera-card" aria-label="RGB-D view">
+        <div class="section-head">
+          <strong>RGB-D View</strong>
+          <span id="cameraText">10fps sync waiting</span>
+          <button
+            class="capture-toggle"
+            id="captureToggle"
+            type="button"
+            aria-pressed="false"
+          >
+            Capture OFF
+          </button>
+        </div>
+        <div class="camera-grid">
+          <figure>
+            <figcaption>RGB</figcaption>
+            <img id="rgbView" alt="AMR RGB stream" />
+          </figure>
+          <figure>
+            <figcaption>Depth</figcaption>
+            <img id="depthView" alt="AMR depth stream" />
+          </figure>
+        </div>
+      </section>
+
+      <section class="log-card" aria-label="Realtime logs">
+        <div class="section-head">
+          <strong>Logs</strong>
+          <button id="clearLogs" type="button">Clear</button>
+        </div>
+        <ol id="logList" class="log-list" aria-live="polite"></ol>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+/* ── Clinical Calm — 병원 화이트 테마 ───────────────────────────────── */
+:root {
+  --canvas:       #f4f7f9;
+  --surface:      #ffffff;
+  --surface-2:    #fafcfd;
+  --line:         #e5eaf0;
+  --line-strong:  #d4dde5;
+  --ink:          #14202b;
+  --ink-2:        #51616f;
+  --ink-3:        #8597a5;
+  --teal:         #0ca39a;
+  --teal-600:     #0a847d;
+  --teal-soft:    #e2f4f2;
+  --blue:         #2f74e0;
+  --blue-soft:    #e8f0fd;
+  --amber:        #d4870f;
+  --amber-soft:   #fbf0db;
+  --red:          #df4448;
+  --red-soft:     #fcebec;
+  --green:        #18a259;
+  --green-soft:   #e3f5ea;
+  --violet:       #7559d6;
+  --shadow-sm:    0 1px 2px rgba(20,32,43,.05);
+  --shadow:       0 1px 2px rgba(20,32,43,.04), 0 8px 24px -12px rgba(20,32,43,.14);
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-teal: var(--teal);
+  --color-teal-600: var(--teal-600);
+  --color-teal-soft: var(--teal-soft);
+  --color-blue: var(--blue);
+  --color-blue-soft: var(--blue-soft);
+  --color-amber: var(--amber);
+  --color-amber-soft: var(--amber-soft);
+  --color-red: var(--red);
+  --color-red-soft: var(--red-soft);
+  --color-green: var(--green);
+  --color-green-soft: var(--green-soft);
+  --color-violet: var(--violet);
+  --font-sans: 'Pretendard Variable', Pretendard, -apple-system, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { padding: 0; margin: 0; height: 100%; }
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
+}
+::selection { background: var(--teal-soft); color: var(--teal-600); }
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: #cfd9e1; border-radius: 9px; border: 2px solid var(--canvas); }
+::-webkit-scrollbar-thumb:hover { background: #b6c3cd; }
+
+/* ── 컴포넌트 유틸 ──────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+}
+.card-hover { transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease; }
+.card-hover:hover { box-shadow: var(--shadow); border-color: var(--line-strong); transform: translateY(-1px); }
+
+.mono { font-family: var(--font-mono); font-feature-settings: "tnum"; }
+.eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+        padding: 3px 10px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise .5s cubic-bezier(.22,.61,.36,1) both; }
+
+@keyframes pulse-soft { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+.live-dot { animation: pulse-soft 1.6s ease-in-out infinite; }
+
+input, textarea, select { font-family: inherit; }
+.field {
+  width: 100%; background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 10px; padding: 9px 12px; font-size: 14px; color: var(--ink);
+  transition: border-color .15s, box-shadow .15s; outline: none;
+}
+.field:focus { border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-soft); background: #fff; }
+.field::placeholder { color: var(--ink-3); }

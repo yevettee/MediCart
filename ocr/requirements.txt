@@ -1,0 +1,9 @@
+gradio
+Pillow
+numpy
+
+# ocr_demo.py 용 (Google Cloud Vision)
+google-cloud-vision
+
+# ocr_realtime.py 용 (EasyOCR - 로컬 추론)
+easyocr

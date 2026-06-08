@@ -20,6 +20,8 @@ setup(
     entry_points={
         'console_scripts': [
             'mission_manager_node = mission_manager.mission_manager_node:main',
+            'stub_mode_node = mission_manager.stub_mode_node:main',
+            'patrol_mode_node = mission_manager.patrol_mode_node:main',
         ],
     },
 )

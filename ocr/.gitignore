@@ -1,0 +1,21 @@
+# GCP 서비스 계정 키 - 절대 커밋 금지
+*.json
+*credentials*
+*service-account*
+*serviceaccount*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# EasyOCR 모델 캐시
+.EasyOCR/
+
+# 기타 불필요 파일
+교안/
+*.pptx
+스크린샷*.png
+노션_*.md

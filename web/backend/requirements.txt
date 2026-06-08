@@ -1,0 +1,7 @@
+flask
+flask-cors
+firebase-admin
+pyyaml
+easyocr
+Pillow
+numpy

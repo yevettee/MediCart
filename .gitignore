@@ -19,3 +19,16 @@ docs/.obsidian/
 # Understand Anything (knowledge graph artifacts)
 .understand-anything/
 
+# web/ build artifacts
+web/frontend/node_modules/
+web/frontend/.next/
+web/backend/venv/
+*.pyc
+serviceAccountKey.json
+**/serviceAccountKey.json
+.env
+web/**/.env
+
+# GCP service account keys - 절대 커밋 금지
+medicart_ws/src/ocr_detector/credentials/
+

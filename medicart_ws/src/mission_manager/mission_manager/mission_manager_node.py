@@ -1,58 +1,133 @@
 #!/usr/bin/env python3
-"""Mission manager node — orchestrates navigation, docking, and scan workflows.
+"""mission_manager — 모드 중재 허브 + mission_pool 명령 실행.
 
-Selects a mission flow from the ``mission_type`` parameter (``patrol`` for the
-autonomous patrol + interview scenario, ``medication`` for nurse-following
-medication assistance) and drives the shared StateMachine. The patrol scenario
-is kicked off through the ``/robot6/start_patrol`` service.
+db_node 가 보내는 명령(/{ns}/mission_request, mission_pool 유래)을 2-lane 라우팅:
+  - 시스템 액션(dock/undock/ros_restart/reboot/shutdown) → MissionExecutor(bashrc 참고)
+  - 모드 액션(start/stop/clear + mode) → ModeArbiter(우선순위 선점/복귀·cmd_vel 게이트)
+/{ns}/mission_feedback 으로 결과 보고. (구 StartPatrol/state_machine 경로는 모드 체계로 대체·제거.)
 """
+import json
+import math
+import os
+import time
 
 import rclpy
 from rclpy.node import Node
+from geometry_msgs.msg import Twist
+from sensor_msgs.msg import LaserScan
+from std_msgs.msg import String
 
-from medi_interfaces.srv import StartPatrol
+from .mission_executor import MissionExecutor
+from .mission_sequencer import MissionSequencer, SEQUENCE_ACTION
+from .mode_arbiter import ModeArbiter
+from .system_commands import SYSTEM_ACTIONS
 
-from .state_machine import MISSION_MEDICATION, MISSION_PATROL, StateMachine
 
-
-# Service that starts the autonomous patrol mission.
-START_PATROL_SERVICE = '/robot6/start_patrol'
+# 모드 레지스트리 — 이름: actuation. 외부 노드가 /{ns}/mode/<name>/* 계약 따름.
+MODE_REGISTRY = {
+    "round": "reactive",   # 회진/추종 (nurse_tracker)
+    "patrol": "nav", "errand": "nav", "guide": "nav", "intake": "nav",
+}
+MODE_ACTIONS = ("start", "stop", "clear")
+SEQUENCE_ACTIONS = (SEQUENCE_ACTION,)   # patrol_mission: undock→patrol→dock 시퀀스
 
 
 class MissionManagerNode(Node):
-    """Central state machine coordinating robot missions."""
+    """모드 중재 허브 + 시스템 명령 실행 노드."""
 
     def __init__(self):
-        """Set up the state machine for the configured mission type."""
         super().__init__('mission_manager_node')
 
-        self.declare_parameter('mission_type', MISSION_MEDICATION)
-        mission_type = self.get_parameter('mission_type').value
-        self._sm = StateMachine(mission_type=mission_type)
+        # ── mission_pool 시스템 명령 경로 ────────────────────────────────
+        self.declare_parameter('namespace', os.environ.get('ROBOT_NAMESPACE', 'robot6'))
+        self.declare_parameter('discovery_ip', os.environ.get('DISCOVERY_IP', ''))
+        self.declare_parameter('ssh_pass', os.environ.get('ROBOT_SSH_PASS', 'turtlebot4'))
+        ns = str(self.get_parameter('namespace').value).strip('/')
+        discovery_ip = str(self.get_parameter('discovery_ip').value)
+        ssh_pass = str(self.get_parameter('ssh_pass').value)
 
-        self._start_patrol_srv = self.create_service(
-            StartPatrol, START_PATROL_SERVICE, self._on_start_patrol)
+        self._feedback_pub = self.create_publisher(String, f'/{ns}/mission_feedback', 10)
+        self._executor = MissionExecutor(
+            ns=ns, discovery_ip=discovery_ip, ssh_pass=ssh_pass,
+            publish_feedback=self._publish_feedback, logger=self.get_logger())
+        self.create_subscription(String, f'/{ns}/mission_request', self._on_mission_request, 10)
+        if not discovery_ip:
+            self.get_logger().warn(
+                '[mission_manager] DISCOVERY_IP 미설정 — ros_restart/reboot/shutdown(ssh) '
+                '불가. robot.env 를 source 후 실행하세요.')
+
+        # ── 모드 중재 허브 ───────────────────────────────────────────────
+        self.declare_parameter('control_hz', 10.0)
+        self.declare_parameter('front_cone_deg', 30.0)
+        self._front_cone = math.radians(float(self.get_parameter('front_cone_deg').value))
+        self._forward_clearance = None
+        self._arbiter = ModeArbiter(self, ns, MODE_REGISTRY, self.get_logger())
+        # 시나리오 A 시퀀서 — patrol_mission(undock→patrol→dock) 오케스트레이션.
+        self._sequencer = MissionSequencer(
+            self._executor, self._arbiter, self._publish_feedback, self.get_logger())
+        self._cmd_pub = self.create_publisher(Twist, f'/{ns}/cmd_vel', 10)
+        self._robot_mode_pub = self.create_publisher(String, f'/{ns}/robot_mode', 10)
+        self.create_subscription(LaserScan, f'/{ns}/scan', self._on_scan, 10)
+        hz = float(self.get_parameter('control_hz').value)
+        self.create_timer(1.0 / hz, self._control_tick)
 
         self.get_logger().info(
-            'mission_manager_node started (mission_type={})'.format(mission_type))
+            'mission_manager_node started (ns={}, 모드={} @ {:.0f}Hz)'
+            .format(ns, list(MODE_REGISTRY), hz))
 
-    def _on_start_patrol(self, request, response):
-        """Begin the patrol mission by leaving IDLE through UNDOCK."""
-        del request  # StartPatrol has an empty request.
-        if self._sm.mission_type != MISSION_PATROL:
-            response.success = False
-            response.message = 'mission_type is not "patrol"'
-            return response
-        if self._sm.state != 'IDLE':
-            response.success = False
-            response.message = 'patrol already running (state={})'.format(self._sm.state)
-            return response
+    # ── mission_request 2-lane 라우팅 (시스템 액션 / 모드 액션) ───────────
+    def _on_mission_request(self, msg):
+        try:
+            req = json.loads(msg.data)
+        except (ValueError, TypeError) as exc:
+            self.get_logger().warn(
+                '[mission_manager] mission_request 파싱 실패: {} raw={!r}'.format(exc, msg.data))
+            return
+        action = req.get('action')
+        if action in SEQUENCE_ACTIONS:                # patrol_mission(undock→patrol→dock)
+            self._sequencer.start(req.get('id'), req.get('params'))
+        elif action in SYSTEM_ACTIONS:               # dock/undock/ros_restart/reboot/shutdown
+            self._executor.handle(req)
+        elif action in MODE_ACTIONS:                  # start/stop/clear (+mode)
+            ok, detail = self._arbiter.apply(action, req.get('mode'), req.get('params'))
+            self._publish_feedback({'id': req.get('id'),
+                                    'status': 'done' if ok else 'failed',
+                                    'detail': detail, 'ts': int(time.time() * 1000)})
+        else:
+            self._publish_feedback({'id': req.get('id'), 'status': 'failed',
+                                    'detail': 'unknown action: {}'.format(action),
+                                    'ts': int(time.time() * 1000)})
 
-        self._sm.transition('UNDOCK')
-        response.success = True
-        response.message = 'patrol started'
-        self.get_logger().info('patrol started; state={}'.format(self._sm.state))
-        return response
+    def _publish_feedback(self, payload):
+        msg = String()
+        msg.data = json.dumps(payload, ensure_ascii=False)
+        self._feedback_pub.publish(msg)
+
+    # ── 안전 입력 + 제어 루프 ────────────────────────────────────────────
+    def _on_scan(self, scan):
+        front = None
+        a = scan.angle_min
+        for r in scan.ranges:
+            if math.isfinite(r) and r > 0.0 and abs(a) <= self._front_cone:
+                front = r if front is None else min(front, r)
+            a += scan.angle_increment
+        self._forward_clearance = front
+
+    def _control_tick(self):
+        now = time.monotonic()
+        self._sequencer.tick(now)             # 시퀀스 단계 진행(undock→patrol→dock)
+        mode, twist = self._arbiter.tick(now, self._forward_clearance, None)
+        if twist is not None:                 # REACTIVE 활성 → 게이트된 속도
+            self._publish_cmd(twist[0], twist[1])
+        elif mode == 'idle' and not self._sequencer.owns_base():
+            self._publish_cmd(0.0, 0.0)       # 대기 → 정지 (dock/undock 중엔 Create3 소유)
+        # NAV 활성 → 미발행(Nav2 소유)
+        m = String(); m.data = mode
+        self._robot_mode_pub.publish(m)
+
+    def _publish_cmd(self, lin, ang):
+        tw = Twist(); tw.linear.x = float(lin); tw.angular.z = float(ang)
+        self._cmd_pub.publish(tw)
 
 
 def main(args=None):
