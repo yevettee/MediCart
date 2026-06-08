@@ -311,6 +311,26 @@ def get_intake(pid):
     return (node or {}).get("data") if isinstance(node, dict) else None
 
 
+def intake_pending_payload(data, ts):
+    """비로그인 환자 자기제출 문진 → intake_pending 레코드(순수)."""
+    data = data or {}
+    sections = data.get("sections")
+    return {
+        "name": str(data.get("name") or "").strip(),
+        "room": str(data.get("room") or "").strip(),
+        "sections": sections if isinstance(sections, dict) else {},
+        "status": "pending",
+        "ts": ts,
+    }
+
+
+def add_intake_pending(data):
+    """intake_pending 큐에 push. 기존 환자 레코드는 건드리지 않음."""
+    payload = intake_pending_payload(data, int(time.time() * 1000))
+    ref = _init().reference("intake_pending").push(payload)
+    return ref.key, payload
+
+
 def add_visit(pid, data):
     """문진 입력을 새 외래방문 기록으로 추가(최신 먼저) + 최근 생체징후(vitals) 갱신.
 

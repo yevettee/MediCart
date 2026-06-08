@@ -187,3 +187,21 @@ def test_targets_seed_shape():
     assert seed["dock"]["x"] == -8.0 and seed["dock"]["y"] == -6.0
     for v in seed.values():
         assert "label" in v and "x" in v and "y" in v and "yaw" in v
+
+
+def test_intake_pending_payload():
+    import fb_read
+    p = fb_read.intake_pending_payload(
+        {"name": " 김환자 ", "room": "101", "sections": {"주호소(CC)": "두통"}}, 1700000000000)
+    assert p["name"] == "김환자"
+    assert p["room"] == "101"
+    assert p["sections"] == {"주호소(CC)": "두통"}
+    assert p["status"] == "pending"
+    assert p["ts"] == 1700000000000
+
+
+def test_intake_pending_payload_defaults():
+    import fb_read
+    p = fb_read.intake_pending_payload({}, 1)
+    assert p["name"] == "" and p["room"] == "" and p["sections"] == {}
+    assert p["status"] == "pending"

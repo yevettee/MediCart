@@ -133,6 +133,15 @@ def me():
     return jsonify({"authed": role != "patient", "role": role})
 
 
+@app.post("/api/intake")
+def intake_submit():
+    body = request.get_json(force=True, silent=True) or {}
+    if not str(body.get("name") or "").strip():
+        return jsonify({"ok": False, "error": "성명을 입력하세요"}), 400
+    key, payload = fb_read.add_intake_pending(body)
+    return jsonify({"ok": True, "id": key, "intake": payload})
+
+
 # ── 환자 ────────────────────────────────────────────────────────────────────
 @app.get("/api/patients")
 def patients():
