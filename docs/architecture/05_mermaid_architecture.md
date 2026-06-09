@@ -56,3 +56,33 @@ graph TD
 ```
 
 > robot3(AMR1)은 PC1에서 위 robot6 스택과 동일하게 동작하며 네임스페이스만 `robot3`.
+
+## 2. 컴퓨트 & 네트워크 레이아웃
+
+```mermaid
+graph TB
+  subgraph NET["네트워크 — ROS2 Humble · WiFi6 AP · Gigabit Ethernet Switch · cloudflared(외부)"]
+    direction TB
+
+    subgraph OPC["운영 PC (PC1=robot3 / PC2=robot6 동일 구성)"]
+      OS["Ubuntu 22.04 LTS · ROS2 Humble · FastDDS Discovery Server :11811 (DOMAIN 6)"]
+      VIZ["RViz2 — 시각화 /scan /map /tf /odom /image_raw · Set Goal Pose→Nav2 · Set Initial Pose→AMCL"]
+      LOC["loc6 — AMCL (bond_timeout 10s 패치)"]
+      NV["nav6 — Nav2 bt_navigator · controller_server · planner_server · map_server (bond 패치)"]
+      APP["앱 패키지 — db_bridge · mission_manager · nurse_tracker · obstacle_detector · medi_interfaces"]
+    end
+
+    subgraph TB4["robot6 — turtlebot4 (RPi 4B)"]
+      BR["turtlebot4_bringup — robot_state_publisher(/robot_description /tf /tf_static) · rplidar_ros(/scan) · depthai_ros_driver(/oakd/rgb /oakd/stereo /camera_info) · diagnostics(/battery_state) · HMI(버튼/LED/오디오)"]
+      TNAV["turtlebot4_navigation — AMCL · controller_server · planner_server · bt_navigator · map_server"]
+      HWB["HW — iRobot Create3 · RPLIDAR A1M8 · OAK-D-Pro · 배터리 · Status LED(MTR/COMM/WiFi/Battery/Power)"]
+    end
+
+    subgraph WPC["PC3 — 웹"]
+      WEB["Next.js :3000 · Flask :5000 · cloudflared 터널 (ROS 노드 없음, RTDB 읽기/쓰기만)"]
+    end
+  end
+
+  OPC <-->|"FastDDS (sensor·TF·cmd_vel)"| TB4
+  WPC <-->|"Firebase RTDB"| OPC
+```
