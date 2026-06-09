@@ -18,11 +18,11 @@ export const SECTIONS: { n: string; title: string; fields: Field[] }[] = [
       "영상의학과", "진단검사의학과",
     ] },
   ]},
-  { n: "02", title: "주호소 (CC)", fields: [
-    { id: "주호소(CC)", label: "주호소 / 내원 사유", type: "textarea" },
+  { n: "02", title: "주요 증상", fields: [
+    { id: "주호소(CC)", label: "주요 증상 / 내원 사유", type: "textarea" },
     { id: "증상 발생시기_경과", label: "증상 발생시기 / 경과", type: "text" },
     { id: "통증부위", label: "통증 부위", type: "text" },
-    { id: "통증점수", label: "통증 점수 (NRS)", type: "scale", max: 10 },
+    { id: "통증점수", label: "통증 점수 (0~10)", type: "scale", max: 10 },
   ]},
   { n: "03", title: "생체징후", fields: [
     { id: "수축기혈압", label: "수축기혈압 (mmHg)", type: "number" },
@@ -38,7 +38,7 @@ export const SECTIONS: { n: string; title: string; fields: Field[] }[] = [
     { id: "금일 복약 여부", label: "금일 복약 여부", type: "select", options: ["복용", "미복용", "해당없음"] },
     { id: "최근 발열_감염노출", label: "최근 발열 / 감염 노출", type: "text" },
     { id: "최근 검사_예정 검사", label: "최근 / 예정 검사", type: "date" },
-    { id: "보고 필요", label: "의료진 보고 필요", type: "select", options: ["N", "Y"] },
+    { id: "보고 필요", label: "의료진 보고 필요", type: "select", options: ["예", "아니오"] },
     { id: "간호 관찰사항", label: "간호 관찰사항", type: "textarea" },
     { id: "작성 간호사", label: "작성 간호사", type: "text" },
   ]},
