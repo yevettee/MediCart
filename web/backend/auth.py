@@ -9,7 +9,7 @@ ROLE_RANK = {"patient": 0, "staff": 1, "admin": 2}
 
 _OPEN = {"/api/health", "/api/login", "/api/me", "/api/logout", "/api/intake"}
 _PATIENT_PREFIXES = ("/api/display",)        # 키오스크(/display) read — 비로그인 허용
-_STAFF_PREFIXES = ("/api/patients", "/api/ocr")
+_STAFF_PREFIXES = ("/api/patients", "/api/ocr", "/api/patrol")
 
 
 def _eq(a, b):

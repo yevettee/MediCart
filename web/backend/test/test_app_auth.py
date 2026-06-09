@@ -40,3 +40,28 @@ def test_before_request_blocks_by_role():
     assert client.get("/api/amrs").status_code == 401
     client.set_cookie("intel_auth", "")
     assert client.post("/api/intake", json={}).status_code != 401
+
+
+def test_patrol_reset_requires_staff(monkeypatch):
+    monkeypatch.setattr(flask_app.fb_read, "reset_intake_flags", lambda: 3)
+    client.set_cookie("intel_auth", "")           # patient
+    assert client.post("/api/patrol/reset").status_code == 401
+    client.set_cookie("intel_auth", "STAFFTOK")   # staff
+    r = client.post("/api/patrol/reset")
+    assert r.status_code == 200 and r.get_json() == {"ok": True, "count": 3}
+
+
+def test_patrol_intake_done(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(flask_app.fb_read, "mark_intake_done",
+                        lambda pid: seen.setdefault("pid", pid) or True)
+    client.set_cookie("intel_auth", "STAFFTOK")
+    r = client.post("/api/patrol/intake-done", json={"pid": "P-2024-0001"})
+    assert r.status_code == 200 and r.get_json()["ok"] is True
+    assert seen["pid"] == "P-2024-0001"
+
+
+def test_patrol_intake_done_bad_pid(monkeypatch):
+    monkeypatch.setattr(flask_app.fb_read, "mark_intake_done", lambda pid: False)
+    client.set_cookie("intel_auth", "STAFFTOK")
+    assert client.post("/api/patrol/intake-done", json={"pid": "x"}).status_code == 400

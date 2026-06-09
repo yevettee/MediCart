@@ -349,6 +349,20 @@ def rooms():
     return jsonify({"rooms": _db.reference("rooms").get() or {}})
 
 
+# ── 순회 문진 (회차 플래그) ───────────────────────────────────────────────────
+@app.post("/api/patrol/reset")
+def patrol_reset():
+    return jsonify({"ok": True, "count": fb_read.reset_intake_flags()})
+
+
+@app.post("/api/patrol/intake-done")
+def patrol_intake_done():
+    body = request.get_json(force=True, silent=True) or {}
+    if fb_read.mark_intake_done(str(body.get("pid") or "")):
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "invalid pid"}), 400
+
+
 @app.get("/api/map")
 def map_meta():
     if not (MAP_YAML and os.path.exists(MAP_YAML) and os.path.exists(MAP_PNG)):
