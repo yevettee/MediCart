@@ -33,3 +33,6 @@ medicart_ws/src/ocr_detector/credentials/
 .env
 web/**/.env
 
+
+# 대용량 학습 데이터(통합 분석 중 추가)
+medicart_ws/src/temp/

@@ -23,11 +23,9 @@ ARGUMENTS = [
                           choices=['true', 'false'],
                           description='Use sim time'),
     DeclareLaunchArgument('params_file',
-                          default_value=PathJoinSubstitution([
-                              get_package_share_directory('turtlebot4_navigation'),
-                              'config',
-                              'nav2.yaml'
-                              ]),
+                          # MediCart 격리 params: robot_radius 0.1 · inflation_radius 0.3
+                          # (공유 turtlebot4_navigation/nav2.yaml 미수정)
+                          default_value='/home/rokey/MediCart/common/nav6.yaml',
                           description='Nav2 parameters'),
     DeclareLaunchArgument('namespace', default_value='',
                           description='Robot namespace')
