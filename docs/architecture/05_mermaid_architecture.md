@@ -266,3 +266,53 @@ flowchart TD
   OV --> RB["'홈 위치로 복귀' 버튼"]
   RB --> RH["saveMode(stop,round) + goto(dock,dock_after) → 도킹 후 종료"]
 ```
+
+## 6. 인터페이스 레퍼런스
+
+### 토픽
+| 토픽 | 타입 | pub → sub |
+| --- | --- | --- |
+| `/robot6/mission_request` | std_msgs/String | db_node → mission_manager_node |
+| `/robot6/mission_feedback` | std_msgs/String | mission_manager_node → db_node |
+| `/robot6/mission_cancel` | std_msgs/String | db_node → mission_manager_node (선점) |
+| `/robot6/cmd_vel` | geometry_msgs/Twist | mission_manager_node(단독) → Create3 |
+| `/robot6/robot_mode` | std_msgs/String | mission_manager_node → 모니터 |
+| `/robot6/mode/{mode}/set` | std_msgs/String (latched) | mode_arbiter → 모드노드 |
+| `/robot6/mode/{mode}/cmd_vel` | geometry_msgs/Twist | 모드노드 → mode_arbiter |
+| `/robot6/mode/{mode}/status` | std_msgs/String | 모드노드 → mode_arbiter |
+| `/robot6/identify/start` | std_msgs/String | patrol_mode_node → identifier_node |
+| `/robot6/patient_identified` | medi_interfaces/PatientIdentified | identifier_node → patrol_mode_node, display_bridge |
+| `/nurse_tracker/target` | std_msgs/String | tracker_node → 시각화 |
+| `/nurse_tracker/annotated_image` | sensor_msgs/Image | tracker_node → 시각화 |
+| `/obstacle_detector/ground_cloud` | sensor_msgs/PointCloud2 | obstacle_node → RViz |
+| `/obstacle_detector/ground_status` | std_msgs/String | obstacle_node → safety_gate |
+| `/robot6/scan` | sensor_msgs/LaserScan | RPLIDAR → amcl/nav2/mission_manager |
+| `/robot6/odom` · `/robot6/battery_state` · `/robot6/dock_status` | nav_msgs/Odometry · sensor_msgs/BatteryState · irobot_create_msgs/DockStatus | Create3 → 구독자 |
+| `/robot6/amcl_pose` · `/robot6/map` | geometry_msgs/PoseWithCovarianceStamped · nav_msgs/OccupancyGrid | AMCL/map_server → Nav2 |
+| `/robot6/oakd/rgb/*` · `/robot6/oakd/stereo/*` | sensor_msgs/Image·CompressedImage·CameraInfo | OAK-D → 인지 |
+
+### 서비스
+| 서비스 | 타입 | 서버 → 클라이언트 |
+| --- | --- | --- |
+| `/robot6/db/get_prescription` | medi_interfaces/GetPrescription | prescription_server → identifier_node |
+| `/robot6/db/list_rooms` | medi_interfaces/ListRooms | rooms_server → patrol_mode_node |
+| `/robot6/start_tracking` | std_srvs/Trigger | tracker_node ← mission_manager/웹 |
+
+### 액션
+| 액션 | 타입 | 서버 → 클라이언트 |
+| --- | --- | --- |
+| `/robot6/navigate_to_pose` | nav2_msgs/NavigateToPose | Nav2 bt_navigator ← nav_executor·patrol_mode·dashboard |
+| `/robot6/dock` · `/robot6/undock` | irobot_create_msgs/action/Dock·Undock | Create3 ← nav_executor·mission_executor·dashboard |
+
+### Firebase RTDB 경로
+| 경로 | 용도 |
+| --- | --- |
+| `robot6/mission_pool` | 미션 큐(웹→로봇) + 상태(로봇→웹) — action·params·status·ts |
+| `robot6/mission_status` · `robot6/mission_log` | db_node 하트비트 · 종료 아카이브 |
+| `robot6/cmd` | 모드 명령(웹 publish_mode_cmd → db_node) |
+| `patients/{pid}/{info,injections,intake,visits,vitals}` | 환자 데이터·문진·생체징후·약품 |
+| `rooms` · `targets` | 병실 waypoint · goto 프리셋(ninety 좌표) |
+| `intake_pending` · `display/current_patient` · `ocr/latest` · `{src}/alerts` · `telemetry` | 환자 자가문진·디스플레이·OCR·알림·텔레메트리 |
+
+> **medi_interfaces 선정의·미결선**(integration_todoList 참고): srv `GetOcrResult·ScanMedicine·VerifyMedicine·ScanPatient·StartMedication·StartPatrol·MoveHome·UpdateVisitStatus`, msg `MedicineInfo·PatientInfo·RobotState·TargetBBox`.
+> 빌트인(외부): `depthai_ros_driver`(OAK-D) · `rplidar_ros` · `turtlebot4_node` · `nav2_*` · `irobot_create_msgs`.
