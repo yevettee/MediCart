@@ -172,3 +172,43 @@ graph LR
   C3["Create3"] -->|"/robot6/odom · /robot6/battery_state · /robot6/dock_status<br/>nav_msgs/Odometry · sensor_msgs/BatteryState · irobot_create_msgs/DockStatus"| SUB["telemetry→RTDB→웹"]
   OAK["OAK-D"] -->|"/robot6/oakd/rgb/* · /robot6/oakd/stereo/*"| PERC["인지 노드들"]
 ```
+
+## 4. 상태머신
+
+### 4.1 미션 라이프사이클 (db_node 오케스트레이션 — 신규 동작)
+
+```mermaid
+stateDiagram-v2
+  [*] --> pending : web push (mission_pool)
+  pending --> sent : 우선순위→ts 선택 후 mission_request 발행
+  sent --> running : accepted/running 수신
+  sent --> failed : 15s 내 accepted 미수신 (START_TIMEOUT)
+  running --> done : mission_feedback done
+  running --> failed : mission_feedback failed
+  running --> preempted : 더 높은 우선순위 도착 (현재 폐기·드롭)
+  done --> [*]
+  failed --> [*]
+  preempted --> [*]
+  note right of running
+    완료 타임아웃 없음 (무제한 대기)
+    NON_PREEMPTIBLE(dock/undock/시스템/patrol_mission)은 선점 안 함
+    nav_executor는 create3 진행 중 cancel을 goal 취소 없이 안전 처리
+  end note
+```
+
+### 4.2 모드 중재 — 우선순위 선점/복귀 + safety_gate
+
+```mermaid
+stateDiagram-v2
+  [*] --> idle
+  idle --> active : start mode (active set 추가)
+  active --> preempted_mode : 더 높은 우선순위 모드 활성
+  preempted_mode --> active : 상위 모드 종료 → 복귀
+  active --> idle : stop/clear 또는 status done/failed
+  active --> lost : status 무응답 3s (lost abort)
+  lost --> idle
+  note right of active
+    우선순위: goto 7 (운영자) > intake 5 > round 4 > errand 3 > guide 2 > patrol 1
+    REACTIVE 모드: cmd_vel은 safety_gate 통과 (전방 lidar 0.30m / depth 0.20m, 전진만 차단)
+  end note
+```
