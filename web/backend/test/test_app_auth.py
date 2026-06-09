@@ -65,3 +65,29 @@ def test_patrol_intake_done_bad_pid(monkeypatch):
     monkeypatch.setattr(flask_app.fb_read, "mark_intake_done", lambda pid: False)
     client.set_cookie("intel_auth", "STAFFTOK")
     assert client.post("/api/patrol/intake-done", json={"pid": "x"}).status_code == 400
+
+
+def test_confirm_injection_records_confirmed(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        flask_app.fb_read, "update_injection_status",
+        lambda pid, inj_id, status, ocr_text=None: seen.update(
+            {"pid": pid, "inj": inj_id, "status": status, "note": ocr_text}),
+    )
+    client.set_cookie("intel_auth", "STAFFTOK")
+    r = client.post("/api/patients/P-2024-0001/injections/inj1/confirm")
+    assert r.status_code == 200
+    assert r.get_json() == {"ok": True, "status": "confirmed"}
+    assert seen == {"pid": "P-2024-0001", "inj": "inj1", "status": "confirmed", "note": "QR 환자 확인"}
+
+
+def test_confirm_injection_bad_pid(monkeypatch):
+    monkeypatch.setattr(flask_app.fb_read, "update_injection_status",
+                        lambda *a, **k: None)
+    client.set_cookie("intel_auth", "STAFFTOK")
+    assert client.post("/api/patients/bad/injections/inj1/confirm").status_code == 400
+
+
+def test_confirm_injection_requires_staff():
+    client.set_cookie("intel_auth", "")
+    assert client.post("/api/patients/P-2024-0001/injections/inj1/confirm").status_code == 401
