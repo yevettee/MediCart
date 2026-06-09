@@ -5,7 +5,7 @@
 """
 import os
 
-_DEFAULT_KEY = "/home/jeon/ocr_ws/src/ocr_detector/credentials/gcp_vision_key.json"
+_DEFAULT_KEY = "/home/rokey/MediCart/medicart_ws/src/ocr_detector/credentials/gcp_vision_key.json"
 _client = None
 
 

@@ -27,6 +27,7 @@ export default function OcrPage() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scanningRef = useRef(false); // 동시 요청 방지
 
+
   /* OCR */
   const [ocrText, setOcrText] = useState("");
   const [scanning, setScanning] = useState(false);
@@ -255,6 +256,7 @@ export default function OcrPage() {
 
             {scanErr && <p className="text-red text-xs mt-2">{scanErr}</p>}
           </section>
+
 
           {/* OCR 결과 */}
           <section className="card p-5">

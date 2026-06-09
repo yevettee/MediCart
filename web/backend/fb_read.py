@@ -311,6 +311,26 @@ def get_intake(pid):
     return (node or {}).get("data") if isinstance(node, dict) else None
 
 
+def intake_pending_payload(data, ts):
+    """비로그인 환자 자기제출 문진 → intake_pending 레코드(순수)."""
+    data = data or {}
+    sections = data.get("sections")
+    return {
+        "name": str(data.get("name") or "").strip(),
+        "room": str(data.get("room") or "").strip(),
+        "sections": sections if isinstance(sections, dict) else {},
+        "status": "pending",
+        "ts": ts,
+    }
+
+
+def add_intake_pending(data):
+    """intake_pending 큐에 push. 기존 환자 레코드는 건드리지 않음."""
+    payload = intake_pending_payload(data, int(time.time() * 1000))
+    ref = _init().reference("intake_pending").push(payload)
+    return ref.key, payload
+
+
 def add_visit(pid, data):
     """문진 입력을 새 외래방문 기록으로 추가(최신 먼저) + 최근 생체징후(vitals) 갱신.
 
@@ -366,12 +386,12 @@ def get_missions(ns):
 def targets_seed():
     """goto 프리셋 시드(순수). dashboard 실측 좌표(map=ninety)."""
     return {
-        "t101_1": {"label": "101호 1번", "x": -12.0, "y": -5.0, "yaw": -0.00143},
-        "t101_2": {"label": "101호 2번", "x": -12.0, "y": -6.0, "yaw": -0.00143},
-        "t102":   {"label": "102호 호출", "x": -13.0, "y": -8.0, "yaw": -0.00143},
-        "pharmacy": {"label": "약품실", "x": -9.0, "y": -9.0, "yaw": -0.00143},
-        "dock":   {"label": "Docking Station", "x": -8.0, "y": -6.0,
-                   "yaw": -0.00142, "dock_after": True},
+        "t101_1": {"label": "101호 1번", "x": -4.39228, "y": -0.701007, "yaw": 2.47368},
+        "t101_2": {"label": "101호 2번", "x": -4.21788, "y": -1.58667, "yaw": -2.63024},
+        "t102":   {"label": "102호 호출", "x": -3.94329, "y": -3.34683, "yaw": -3.1113},
+        "pharmacy": {"label": "약품실", "x": -0.302782, "y": -3.3757, "yaw": -0.0545105},
+        "dock":   {"label": "Docking Station", "x": -0.354229, "y": -0.118972,
+                   "yaw": -0.0042011, "dock_after": True},
     }
 
 

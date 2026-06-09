@@ -1,7 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { getAmrs, AmrSnapshot } from "@/lib/api";
+import { getAmrs, getTargets, type AmrSnapshot, type GotoTarget } from "@/lib/api";
+import { PRIMARY_NS } from "@/lib/config";
+import { startFollow } from "@/lib/followActions";
+import { type ArrivalTarget } from "@/lib/follow";
+import FollowOverlay from "@/components/FollowOverlay";
 
 type Banner = {
   href: string; title: string; sub: string; tone: string; soft: string;
@@ -21,6 +25,11 @@ const BANNERS: Banner[] = [
 
 export default function Home() {
   const [stat, setStat] = useState({ online: 0, total: 2 });
+  const [confirming, setConfirming] = useState(false);
+  const [followActive, setFollowActive] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startWarn, setStartWarn] = useState<string | null>(null);
+  const [targets, setTargets] = useState<Record<string, GotoTarget>>({});
 
   useEffect(() => {
     const load = () =>
@@ -35,8 +44,74 @@ export default function Home() {
     return () => clearInterval(t);
   }, []);
 
+  useEffect(() => {
+    getTargets().then((r) => setTargets(r.targets || {})).catch(() => {});
+  }, []);
+
+  const arrivalTargets: ArrivalTarget[] = ["pharmacy", "t101_1", "t101_2"]
+    .flatMap((k) => {
+      const t = targets[k];
+      return t ? [{ key: k, label: t.label, x: t.x, y: t.y }] : [];
+    });
+  const dock = targets["dock"]
+    ? { x: targets.dock.x, y: targets.dock.y, yaw: targets.dock.yaw }
+    : { x: -8, y: -6, yaw: 0 };
+
+  async function confirmStart() {
+    setConfirming(false);
+    setStartWarn(null);
+    let docked = true;
+    try {
+      const a = await getAmrs();
+      docked = a[PRIMARY_NS]?.dock?.is_docked ?? true;
+    } catch { /* 기본 docked 가정 */ }
+    setFollowActive(true);
+    setStarting(true);
+    try {
+      const ok = await startFollow(PRIMARY_NS, docked);
+      if (!ok) setStartWarn("undock 시간초과 — 도크 상태 확인 필요");
+    } catch {
+      setStartWarn("회진 시작 실패 — 다시 시도");
+    } finally {
+      setStarting(false);
+    }
+  }
+
   return (
     <div className="p-7 md:p-9 max-w-[1100px] mx-auto">
+      {!confirming ? (
+        <button
+          onClick={() => setConfirming(true)}
+          className="w-full rounded-2xl px-7 py-6 mb-6 text-left text-white shadow-md flex items-center justify-between"
+          style={{ background: "linear-gradient(90deg,#0ca39a,#0b7d76)" }}
+        >
+          <div>
+            <div className="text-[20px] font-bold">회진 모드 시작</div>
+            <div className="text-[13px] text-white/80 mt-1">AMR이 앞의 대상을 따라 병동을 회진합니다</div>
+          </div>
+          <span className="text-[26px]">▶</span>
+        </button>
+      ) : (
+        <div
+          className="w-full rounded-2xl px-7 py-6 mb-6 text-white shadow-md flex items-center justify-between gap-4"
+          style={{ background: "linear-gradient(90deg,#0ca39a,#0b7d76)" }}
+        >
+          <div className="text-[15px] font-semibold">회진 모드를 시작할까요? (도크 상태면 자동 undock)</div>
+          <div className="flex gap-2 shrink-0">
+            <button onClick={confirmStart} className="px-5 py-2.5 rounded-xl bg-white text-[#0b7d76] font-semibold">확인</button>
+            <button onClick={() => setConfirming(false)} className="px-5 py-2.5 rounded-xl bg-white/20 font-semibold">취소</button>
+          </div>
+        </div>
+      )}
+      <FollowOverlay
+        active={followActive}
+        ns={PRIMARY_NS}
+        targets={arrivalTargets}
+        dock={dock}
+        starting={starting}
+        startWarn={startWarn}
+        onExit={() => { setFollowActive(false); setStarting(false); setStartWarn(null); }}
+      />
       <div className="eyebrow">병동 보조 로봇</div>
       <h1 className="text-[clamp(24px,4vw,34px)] font-bold mt-1.5">통합 관제 콘솔</h1>
       <p className="text-[14px] text-ink-2 mt-2">메뉴를 선택해 관제·환자·문진·디버그로 이동합니다.</p>

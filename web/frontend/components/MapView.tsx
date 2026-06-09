@@ -1,25 +1,34 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { API_BASE, AmrSnapshot, getAmrs, getRooms, saveMode, getMapMeta, MapMeta } from "@/lib/api";
+import { API_BASE, AmrSnapshot, getAmrs, getRooms, saveMode, getMapMeta, MapMeta, pushMission } from "@/lib/api";
 import { modeOf } from "@/lib/modes";
 import { PRIMARY_NS, SECONDARY_NS } from "@/lib/config";
 
 type Rooms = { rooms?: Record<string, { x: number; y: number; yaw?: number; patient?: string }> };
 const AMR_COLOR: Record<string, string> = { robot3: "#0ca39a", robot6: "#2f74e0" };
 
-export default function MapView() {
-  const [amrs, setAmrs] = useState<Record<string, AmrSnapshot>>({});
+export default function MapView({ embedded = false, ns: nsProp, amrs: amrsProp, live: liveProp }: {
+  embedded?: boolean;                       // 콘솔 내장 시 true → 페이지 chrome 제거
+  ns?: string;                              // 외부 제어 네임스페이스(클릭 goto 대상)
+  amrs?: Record<string, AmrSnapshot>;       // 외부 제공 시 자체 SSE 생략(단일 스트림)
+  live?: boolean;
+} = {}) {
+  const [amrsState, setAmrs] = useState<Record<string, AmrSnapshot>>({});
+  const amrs = amrsProp ?? amrsState;       // controlled(콘솔) 우선, 아니면 자체 수신
   const [rooms, setRooms] = useState<Rooms>({});
   const [mapMeta, setMapMeta] = useState<MapMeta>({ available: false });
   const mapImg = useRef<HTMLImageElement | null>(null);
   const [mapReady, setMapReady] = useState(0); // 이미지 로드 트리거(리렌더)
-  const [live, setLive] = useState(false);
+  const [liveState, setLive] = useState(false);
+  const live = liveProp ?? liveState;
+  const [selNsState, setSelNs] = useState<string>(PRIMARY_NS);
+  const selNs = nsProp ?? selNsState;       // controlled(콘솔) 우선
+  const viewRef = useRef<{ ox: number; oy: number; res: number; offx: number; offy: number; s: number; ih: number } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // 초기 + SSE
+  // 초기 fetch + (단독 모드일 때만) 자체 SSE. amrs 를 외부에서 받으면 스트림은 콘솔이 소유.
   useEffect(() => {
-    getAmrs().then(setAmrs).catch(() => {});
     getRooms().then(setRooms).catch(() => {});
     getMapMeta().then((m) => {
       setMapMeta(m);
@@ -29,6 +38,8 @@ export default function MapView() {
         img.src = `${API_BASE}/api/map.png?t=${Date.now()}`;
       }
     }).catch(() => {});
+    if (amrsProp) return;                   // controlled: 콘솔이 amrs/SSE 제공
+    getAmrs().then(setAmrs).catch(() => {});
     const es = new EventSource(`${API_BASE}/api/stream`, { withCredentials: true });
     es.onopen = () => setLive(true);
     es.onerror = () => setLive(false);
@@ -39,6 +50,7 @@ export default function MapView() {
       } catch {}
     };
     return () => es.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 캔버스 렌더
@@ -63,7 +75,9 @@ export default function MapView() {
       // 맵 픽셀(좌하단 origin, y-up) → 화면. world(wx,wy)→맵픽셀→화면.
       X = (wx: number) => offx + ((wx - ox) / res) * s;
       Y = (wy: number) => offy + (ih - (wy - oy) / res) * s;
+      viewRef.current = { ox, oy, res, offx, offy, s, ih };
     } else {
+      viewRef.current = null;     // 클릭 이동은 저장맵 있을 때만
       const pts: [number, number][] = [];
       Object.values(rooms.rooms || {}).forEach((r) => pts.push([r.x, r.y]));
       Object.values(amrs).forEach((a) => a?.pose && pts.push([a.pose.x, a.pose.y]));
@@ -121,16 +135,52 @@ export default function MapView() {
 
   const sources = Object.keys(amrs).length ? Object.keys(amrs) : [PRIMARY_NS, SECONDARY_NS];
 
+  async function onMapClick(e: React.MouseEvent<HTMLCanvasElement>) {
+    const v = viewRef.current, cv = canvasRef.current;
+    if (!v || !cv) return;     // 저장맵 없으면 클릭 이동 비활성
+    const rect = cv.getBoundingClientRect();
+    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+    // 화면 → 맵픽셀 → 월드(렌더의 X/Y 역함수)
+    const wx = v.ox + ((sx - v.offx) / v.s) * v.res;
+    const wy = v.oy + (v.ih - (sy - v.offy) / v.s) * v.res;
+    if (!window.confirm(`${selNs.toUpperCase()} → (${wx.toFixed(2)}, ${wy.toFixed(2)}) 이동할까요?`)) return;
+    await pushMission(selNs, "goto", { x: wx, y: wy, yaw: 0, label: "맵 클릭" });
+  }
+
+  // 콘솔 내장 모드: 지도 캔버스만(헤더·카드·패딩 제거). 부모 높이를 채운다.
+  if (embedded) {
+    return (
+      <div ref={wrapRef} className="card relative overflow-hidden w-full h-full min-h-[360px]">
+        <canvas ref={canvasRef} className="absolute inset-0" onClick={onMapClick}
+          style={{ cursor: viewRef.current ? "crosshair" : "default" }} />
+        <div className="absolute left-4 top-4 pill bg-surface/90 border-line text-ink-2 backdrop-blur">
+          <span className="dot bg-teal" /> 2D 병동 맵 · 실시간 · 클릭 → 이동
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-7">
       <Header live={live} />
       <MappingControl amrs={amrs} />
       <div className="grid grid-cols-[1fr_320px] gap-5 mt-5 rise">
         {/* 맵 */}
-        <div ref={wrapRef} className="card relative overflow-hidden h-[calc(100vh-150px)] min-h-[420px]">
-          <canvas ref={canvasRef} className="absolute inset-0" />
-          <div className="absolute left-4 top-4 pill bg-surface/90 border-line text-ink-2 backdrop-blur">
-            <span className="dot bg-teal" /> 2D 병동 맵 · 실시간
+        <div className="flex flex-col">
+          <div className="flex gap-2 mb-2">
+            {[PRIMARY_NS, SECONDARY_NS].map((ns) => (
+              <button key={ns} onClick={() => setSelNs(ns)}
+                className={`px-3 py-1.5 rounded-lg text-[13px] font-bold border ${selNs === ns ? "bg-brand text-white border-brand" : "bg-surface-2 border-line"}`}>
+                {ns.toUpperCase()}
+              </button>
+            ))}
+            <span className="text-ink-3 text-[12px] self-center">맵 클릭 → 선택 로봇 이동</span>
+          </div>
+          <div ref={wrapRef} className="card relative overflow-hidden h-[calc(100vh-150px)] min-h-[420px]">
+            <canvas ref={canvasRef} className="absolute inset-0" onClick={onMapClick} style={{ cursor: "crosshair" }} />
+            <div className="absolute left-4 top-4 pill bg-surface/90 border-line text-ink-2 backdrop-blur">
+              <span className="dot bg-teal" /> 2D 병동 맵 · 실시간
+            </div>
           </div>
         </div>
         {/* AMR 카드 */}

@@ -44,3 +44,8 @@ def test_active_count_excludes_terminal_and_meta():
     }
     assert active_count(pool) == 2   # pending + running
     assert active_count(None) == 0
+
+
+def test_goto_has_long_watchdog_timeout():
+    from db_bridge.mission_queue import ACTION_TIMEOUTS, DEFAULT_TIMEOUT
+    assert ACTION_TIMEOUTS.get("goto", DEFAULT_TIMEOUT) >= 180.0

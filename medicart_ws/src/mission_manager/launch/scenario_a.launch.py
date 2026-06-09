@@ -8,14 +8,12 @@
                     db_node             (mission_pool → mission_request, 웹 순찰시작 트리거)
   mission_manager:  mission_manager_node (undock→patrol→dock 시퀀스 라우팅)
                     patrol_mode_node     (병상 순회 + dwell QR 스캔창)
-  patient_identifier: identifier_node    (QR 디코드)
-                      webcam_node        (USB 웹캠 → image_topic, start_webcam:=true 기본)
+  patient_identifier: identifier_node    (웹캠/카메라 QR 디코드)
 
 전제(이 런치에 포함 안 됨 — 로봇/시뮬 브링업 따로):
   - Nav2 (patrol 의 NavigateToPose)
-  - 웹캠은 webcam_node 가 발행(기본 on). 단, 웹캠이 물리적으로 연결된 머신에서
-    이 런치를 돌려야 한다. 별도 카메라 드라이버를 쓰면 start_webcam:=false +
-    image_topic:=/{ns}/<그 토픽> 으로 지정.
+  - 카메라 노드: identifier 가 구독할 image_topic 을 발행해야 함
+    (터틀봇4 웹캠이면 image_topic:=/{ns}/<webcam토픽> 으로 지정)
 
 robot6 보호: namespace 기본값을 env(로컬 override=robot3)에서 가져오며, env 미설정 시
 fallback 도 robot3 다. robot6 으로 돌리려면 명시적으로 namespace:=robot6 을 줘야 한다.
@@ -46,13 +44,10 @@ def launch_setup(context, *args, **kwargs):
     fb_db_url = LaunchConfiguration('fb_db_url').perform(context)
     image_topic = LaunchConfiguration('image_topic').perform(context).strip()
     start_db_node = LaunchConfiguration('start_db_node').perform(context).lower() == 'true'
-    start_webcam = LaunchConfiguration('start_webcam').perform(context).lower() == 'true'
-    webcam_device = LaunchConfiguration('webcam_device').perform(context).strip()
 
-    webcam_topic = f'/{ns}/webcam/image_raw'
-    # image_topic 미지정 시: 웹캠을 띄우면 웹캠 토픽, 아니면 oakd 기본 토픽.
+    # image_topic 미지정 시 identifier 가 ns 로 만드는 기본값과 동일하게 채운다.
     if not image_topic:
-        image_topic = webcam_topic if start_webcam else f'/{ns}/oakd/rgb/image_raw'
+        image_topic = f'/{ns}/oakd/rgb/image_raw'
 
     db_params = [{'namespace': ns, 'fb_cred': fb_cred, 'fb_db_url': fb_db_url}]
 
@@ -81,16 +76,6 @@ def launch_setup(context, *args, **kwargs):
             Node(package='db_bridge', executable='db_node',
                  name='db_node', output='screen', parameters=db_params))
 
-    # webcam: USB 웹캠 → image_topic 발행. 웹캠이 물리적으로 연결된 머신에서
-    # 이 런치를 돌려야 한다(터틀봇4 본체에 꽂았으면 본체에서). 별도 카메라 드라이버를
-    # 쓰면 start_webcam:=false 로 끄고 image_topic:= 으로 그 토픽을 가리키면 된다.
-    if start_webcam:
-        nodes.append(
-            Node(package='patient_identifier', executable='webcam_node',
-                 name='webcam_node', output='screen',
-                 parameters=[{'namespace': ns, 'image_topic': webcam_topic,
-                              'device': webcam_device}]))
-
     return nodes
 
 
@@ -116,13 +101,5 @@ def generate_launch_description():
             'start_db_node',
             default_value='true',
             description='mission_pool→mission_request db_node 동시 기동 여부'),
-        DeclareLaunchArgument(
-            'start_webcam',
-            default_value='true',
-            description='USB 웹캠 노드 동시 기동(웹캠 연결된 머신에서). 별도 카메라 드라이버 쓰면 false'),
-        DeclareLaunchArgument(
-            'webcam_device',
-            default_value='0',
-            description='웹캠 입력 — 인덱스(0) 또는 경로(/dev/video0)'),
         OpaqueFunction(function=launch_setup),
     ])

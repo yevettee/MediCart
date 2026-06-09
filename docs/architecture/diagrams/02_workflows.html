@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MediCart — 주요 기능 워크플로우</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" integrity="sha384-en/ztfPSRkGfME4KIm05joYXynqzUgbsG5nMrj/xEFAHXkeZfO3yMK8QQ+mP7p1/" crossorigin="anonymous"></script>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Inter',-apple-system,sans-serif; background:#eef1f6; min-height:100vh; padding:2rem; color:#1e293b; }
+    .container { max-width:1180px; margin:0 auto; }
+    .header { margin-bottom:1.5rem; }
+    .header-row { display:flex; align-items:center; gap:0.75rem; margin-bottom:0.35rem; }
+    .dot { width:11px; height:11px; background:#059669; border-radius:50%; }
+    h1 { font-size:1.4rem; font-weight:700; color:#0f172a; }
+    .subtitle { color:#64748b; font-size:0.85rem; margin-left:1.5rem; }
+    .diagram-container { background:#ffffff; border-radius:14px; border:1px solid #e2e8f0; padding:1.25rem; overflow-x:auto; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+    svg { width:100%; min-width:940px; display:block; }
+    .footer { margin-top:1.25rem; color:#94a3b8; font-size:0.72rem; text-align:center; }
+    .toolbar { display:flex; gap:0.5rem; margin-left:auto; align-items:center; }
+    .toolbar-toggle { background:transparent; border:none; color:#94a3b8; cursor:pointer; font-size:1.25rem; line-height:1; padding:0.25rem 0.5rem; border-radius:6px; }
+    .toolbar-toggle:hover { color:#475569; background:#f1f5f9; }
+    .toolbar-actions { display:none; gap:0.5rem; }
+    .toolbar.expanded .toolbar-actions { display:flex; }
+    .toolbar-actions button { background:#f8fafc; border:1px solid #cbd5e1; color:#475569; padding:0.35rem 0.7rem; border-radius:6px; font-family:inherit; font-size:0.72rem; cursor:pointer; }
+    .toolbar-actions button:hover { background:#eef2f7; color:#0f172a; }
+    @media print { .toolbar{display:none !important;} body{background:#fff;} }
+  </style>
+</head>
+<body>
+  <div class="container" id="report-container">
+    <div class="header">
+      <div class="header-row">
+        <div class="dot"></div>
+        <h1>MediCart — 주요 기능 워크플로우</h1>
+        <div class="toolbar">
+          <div class="toolbar-actions">
+            <button onclick="copyAsImage(this)">📋 Copy</button>
+            <button onclick="downloadPNG(this)">🖼️ PNG</button>
+            <button onclick="downloadPDF(this)">📄 PDF</button>
+          </div>
+          <button class="toolbar-toggle" onclick="this.parentElement.classList.toggle('expanded')" title="내보내기">⋯</button>
+        </div>
+      </div>
+      <p class="subtitle">미션 요청 파이프라인 · 시나리오 A(순찰+문진) · 시나리오 B(간호사 투약)</p>
+    </div>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 792">
+        <defs>
+          <marker id="arr" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto"><path d="M0,0 L7.5,3 L0,6 Z" fill="#64748b"/></marker>
+          <marker id="arrA" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto"><path d="M0,0 L7.5,3 L0,6 Z" fill="#0891b2"/></marker>
+          <marker id="arrB" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto"><path d="M0,0 L7.5,3 L0,6 Z" fill="#059669"/></marker>
+        </defs>
+
+        <!-- ============ SECTION 1: mission pipeline ============ -->
+        <rect x="20" y="36" width="960" height="196" rx="12" fill="#fafbfc" stroke="#cbd5e1" stroke-width="1.5"/>
+        <text x="38" y="60" fill="#334155" font-size="13" font-weight="700">① 미션 요청 파이프라인 — 웹 버튼이 로봇 동작으로 이어지는 경로</text>
+
+        <!-- linear row -->
+        <rect x="40" y="78" width="150" height="56" rx="9" fill="#e6f7fb" stroke="#0891b2" stroke-width="2"/>
+        <text x="115" y="102" fill="#0f172a" font-size="12" font-weight="700" text-anchor="middle">웹 명령</text>
+        <text x="115" y="119" fill="#64748b" font-size="9" text-anchor="middle">/control · /map 클릭</text>
+
+        <rect x="246" y="78" width="150" height="56" rx="9" fill="#f1ebfd" stroke="#7c3aed" stroke-width="2"/>
+        <text x="321" y="102" fill="#0f172a" font-size="12" font-weight="700" text-anchor="middle">RTDB mission_pool</text>
+        <text x="321" y="119" fill="#64748b" font-size="9" text-anchor="middle">미션 push</text>
+
+        <rect x="452" y="78" width="150" height="56" rx="9" fill="#fff1e6" stroke="#ea580c" stroke-width="2"/>
+        <text x="527" y="102" fill="#0f172a" font-size="12" font-weight="700" text-anchor="middle">db_node</text>
+        <text x="527" y="119" fill="#64748b" font-size="9" text-anchor="middle">listen · FIFO 디스패치</text>
+
+        <rect x="658" y="78" width="160" height="56" rx="9" fill="#e7f8f0" stroke="#059669" stroke-width="2.5"/>
+        <text x="738" y="102" fill="#0f172a" font-size="12" font-weight="700" text-anchor="middle">mission_manager</text>
+        <text x="738" y="119" fill="#64748b" font-size="9" text-anchor="middle">2-lane 라우터</text>
+
+        <line x1="190" y1="106" x2="244" y2="106" stroke="#64748b" stroke-width="2" marker-end="url(#arr)"/><text x="217" y="99" fill="#64748b" font-size="9" text-anchor="middle">write</text>
+        <line x1="396" y1="106" x2="450" y2="106" stroke="#64748b" stroke-width="2" marker-end="url(#arr)"/><text x="423" y="99" fill="#64748b" font-size="9" text-anchor="middle">listen</text>
+        <line x1="602" y1="106" x2="656" y2="106" stroke="#64748b" stroke-width="2" marker-end="url(#arr)"/><text x="629" y="99" fill="#64748b" font-size="8" text-anchor="middle">mission_request</text>
+
+        <!-- 3 lanes -->
+        <rect x="860" y="70" width="120" height="34" rx="7" fill="#eef2f7" stroke="#64748b" stroke-width="1.5"/>
+        <text x="920" y="86" fill="#0f172a" font-size="10" font-weight="700" text-anchor="middle">system</text>
+        <text x="920" y="98" fill="#64748b" font-size="8" text-anchor="middle">dock/undock(subproc)</text>
+        <rect x="860" y="112" width="120" height="34" rx="7" fill="#eef2f7" stroke="#64748b" stroke-width="1.5"/>
+        <text x="920" y="128" fill="#0f172a" font-size="10" font-weight="700" text-anchor="middle">goto</text>
+        <text x="920" y="140" fill="#64748b" font-size="8" text-anchor="middle">undock→Nav2→dock</text>
+        <rect x="860" y="154" width="120" height="34" rx="7" fill="#eef2f7" stroke="#64748b" stroke-width="1.5"/>
+        <text x="920" y="170" fill="#0f172a" font-size="10" font-weight="700" text-anchor="middle">mode</text>
+        <text x="920" y="182" fill="#64748b" font-size="8" text-anchor="middle">arbiter cmd_vel</text>
+        <line x1="818" y1="100" x2="858" y2="87" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="818" y1="110" x2="858" y2="128" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="818" y1="120" x2="858" y2="168" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <text x="40" y="170" fill="#475569" font-size="10" font-weight="600">피드백 경로:</text>
+        <text x="120" y="170" fill="#64748b" font-size="10">mission_manager → /mission_feedback → db_node → RTDB 상태 기록 → 웹 표시</text>
+        <text x="40" y="194" fill="#475569" font-size="10" font-weight="600">안전 원칙:</text>
+        <text x="120" y="194" fill="#64748b" font-size="10">mission_manager가 /cmd_vel·Nav2 단독 소유 · 모드 우선순위 선점 · 전방 장애물 게이트</text>
+        <text x="40" y="214" fill="#94a3b8" font-size="9">* 운영자 대시보드(dashboard_node)는 RTDB를 우회해 Nav2 goto를 직접 호출하는 별도 경로</text>
+
+        <!-- ============ SECTION 2: Scenario A ============ -->
+        <rect x="20" y="252" width="960" height="232" rx="12" fill="#f0fbfd" stroke="#0891b2" stroke-width="1.5"/>
+        <text x="38" y="276" fill="#0e7490" font-size="13" font-weight="700">② 시나리오 A — 자율 순찰 + 문진 보조 (patrol)</text>
+
+        <!-- step boxes row1: 4 -->
+        <rect x="40" y="296" width="150" height="62" rx="9" fill="#ffffff" stroke="#0891b2" stroke-width="2"/>
+        <text x="115" y="320" fill="#0f172a" font-size="11" font-weight="700" text-anchor="middle">1 · 도킹 대기</text>
+        <text x="115" y="338" fill="#64748b" font-size="9" text-anchor="middle">station(home)</text>
+        <rect x="262" y="296" width="150" height="62" rx="9" fill="#ffffff" stroke="#0891b2" stroke-width="2"/>
+        <text x="337" y="320" fill="#0f172a" font-size="11" font-weight="700" text-anchor="middle">2 · Undock</text>
+        <text x="337" y="338" fill="#64748b" font-size="9" text-anchor="middle">Create3 분리</text>
+        <rect x="484" y="296" width="150" height="62" rx="9" fill="#ffffff" stroke="#0891b2" stroke-width="2"/>
+        <text x="559" y="320" fill="#0f172a" font-size="11" font-weight="700" text-anchor="middle">3 · 병실 이동</text>
+        <text x="559" y="338" fill="#64748b" font-size="9" text-anchor="middle">Nav2 navigate_to_pose</text>
+        <rect x="706" y="296" width="150" height="62" rx="9" fill="#ffffff" stroke="#0891b2" stroke-width="2"/>
+        <text x="781" y="320" fill="#0f172a" font-size="11" font-weight="700" text-anchor="middle">4 · 재실·신원</text>
+        <text x="781" y="338" fill="#64748b" font-size="9" text-anchor="middle">YOLO + QR + 병실검증</text>
+
+        <line x1="190" y1="327" x2="260" y2="327" stroke="#0891b2" stroke-width="2" marker-end="url(#arrA)"/>
+        <line x1="412" y1="327" x2="482" y2="327" stroke="#0891b2" stroke-width="2" marker-end="url(#arrA)"/>
+        <line x1="634" y1="327" x2="704" y2="327" stroke="#0891b2" stroke-width="2" marker-end="url(#arrA)"/>
+
+        <!-- step boxes row2: 3 (right to left flow) -->
+        <rect x="706" y="396" width="150" height="62" rx="9" fill="#ffffff" stroke="#0891b2" stroke-width="2"/>
+        <text x="781" y="420" fill="#0f172a" font-size="11" font-weight="700" text-anchor="middle">5 · 웹 문진표</text>
+        <text x="781" y="438" fill="#64748b" font-size="9" text-anchor="middle">/intake → RTDB 저장</text>
+        <rect x="484" y="396" width="150" height="62" rx="9" fill="#ffffff" stroke="#0891b2" stroke-width="2"/>
+        <text x="559" y="420" fill="#0f172a" font-size="11" font-weight="700" text-anchor="middle">6 · 복귀</text>
+        <text x="559" y="438" fill="#64748b" font-size="9" text-anchor="middle">station 으로 Nav2</text>
+        <rect x="262" y="396" width="150" height="62" rx="9" fill="#ffffff" stroke="#0891b2" stroke-width="2"/>
+        <text x="337" y="420" fill="#0f172a" font-size="11" font-weight="700" text-anchor="middle">7 · Dock</text>
+        <text x="337" y="438" fill="#64748b" font-size="9" text-anchor="middle">충전 복귀</text>
+
+        <!-- 4 -> 5 (down) -->
+        <line x1="781" y1="358" x2="781" y2="394" stroke="#0891b2" stroke-width="2" marker-end="url(#arrA)"/>
+        <line x1="706" y1="427" x2="636" y2="427" stroke="#0891b2" stroke-width="2" marker-end="url(#arrA)"/>
+        <line x1="484" y1="427" x2="414" y2="427" stroke="#0891b2" stroke-width="2" marker-end="url(#arrA)"/>
+        <!-- loop: 5 -> 3 (남은 병실) -->
+        <path d="M 781 396 L 781 378 L 559 378 L 559 360" fill="none" stroke="#0891b2" stroke-width="1.8" stroke-dasharray="5,4" marker-end="url(#arrA)"/>
+        <text x="640" y="373" fill="#0e7490" font-size="9" font-weight="600" text-anchor="middle">남은 병실 → 반복</text>
+        <text x="900" y="438" fill="#94a3b8" font-size="9" text-anchor="middle">부재/불일치는</text>
+        <text x="900" y="450" fill="#94a3b8" font-size="9" text-anchor="middle">DB 기록 후 재방문</text>
+
+        <!-- ============ SECTION 3: Scenario B ============ -->
+        <rect x="20" y="504" width="960" height="232" rx="12" fill="#f1faf5" stroke="#059669" stroke-width="1.5"/>
+        <text x="38" y="528" fill="#047857" font-size="13" font-weight="700">③ 시나리오 B — 간호사 투약 보조 (medication)</text>
+
+        <rect x="40" y="548" width="150" height="62" rx="9" fill="#ffffff" stroke="#059669" stroke-width="2"/>
+        <text x="115" y="572" fill="#0f172a" font-size="11" font-weight="700" text-anchor="middle">1 · 도킹 대기</text>
+        <text x="115" y="590" fill="#64748b" font-size="9" text-anchor="middle">station(home)</text>
+        <rect x="262" y="548" width="150" height="62" rx="9" fill="#ffffff" stroke="#059669" stroke-width="2"/>
+        <text x="337" y="572" fill="#0f172a" font-size="11" font-weight="700" text-anchor="middle">2 · Undock</text>
+        <text x="337" y="590" fill="#64748b" font-size="9" text-anchor="middle">Create3 분리</text>
+        <rect x="484" y="548" width="150" height="62" rx="9" fill="#ffffff" stroke="#059669" stroke-width="2"/>
+        <text x="559" y="572" fill="#0f172a" font-size="11" font-weight="700" text-anchor="middle">3 · 간호사 추종</text>
+        <text x="559" y="590" fill="#64748b" font-size="9" text-anchor="middle">YOLO+ByteTrack→cmd_vel</text>
+        <rect x="706" y="548" width="150" height="62" rx="9" fill="#ffffff" stroke="#059669" stroke-width="2"/>
+        <text x="781" y="572" fill="#0f172a" font-size="11" font-weight="700" text-anchor="middle">4 · 호실 도착</text>
+        <text x="781" y="590" fill="#64748b" font-size="9" text-anchor="middle">STANDBY</text>
+
+        <line x1="190" y1="579" x2="260" y2="579" stroke="#059669" stroke-width="2" marker-end="url(#arrB)"/>
+        <line x1="412" y1="579" x2="482" y2="579" stroke="#059669" stroke-width="2" marker-end="url(#arrB)"/>
+        <line x1="634" y1="579" x2="704" y2="579" stroke="#059669" stroke-width="2" marker-end="url(#arrB)"/>
+
+        <rect x="706" y="648" width="150" height="62" rx="9" fill="#ffffff" stroke="#059669" stroke-width="2"/>
+        <text x="781" y="672" fill="#0f172a" font-size="11" font-weight="700" text-anchor="middle">5 · 약품 OCR 검증</text>
+        <text x="781" y="690" fill="#64748b" font-size="9" text-anchor="middle">처방 step 대조(반복)</text>
+        <rect x="484" y="648" width="150" height="62" rx="9" fill="#ffffff" stroke="#059669" stroke-width="2"/>
+        <text x="559" y="672" fill="#0f172a" font-size="11" font-weight="700" text-anchor="middle">6 · 복귀</text>
+        <text x="559" y="690" fill="#64748b" font-size="9" text-anchor="middle">station 으로 Nav2</text>
+        <rect x="262" y="648" width="150" height="62" rx="9" fill="#ffffff" stroke="#059669" stroke-width="2"/>
+        <text x="337" y="672" fill="#0f172a" font-size="11" font-weight="700" text-anchor="middle">7 · Dock</text>
+        <text x="337" y="690" fill="#64748b" font-size="9" text-anchor="middle">충전 복귀</text>
+
+        <line x1="781" y1="610" x2="781" y2="646" stroke="#059669" stroke-width="2" marker-end="url(#arrB)"/>
+        <line x1="706" y1="679" x2="636" y2="679" stroke="#059669" stroke-width="2" marker-end="url(#arrB)"/>
+        <line x1="484" y1="679" x2="414" y2="679" stroke="#059669" stroke-width="2" marker-end="url(#arrB)"/>
+        <path d="M 815 648 L 815 630 L 847 630 L 847 648" fill="none" stroke="#059669" stroke-width="1.8" stroke-dasharray="5,4" marker-end="url(#arrB)"/>
+        <text x="888" y="635" fill="#047857" font-size="9" font-weight="600" text-anchor="middle">약품 반복</text>
+      </svg>
+    </div>
+
+    <p class="footer">MediCart · 주요 기능 워크플로우 · 아키텍처는 00_system_overview.html · 노드 상세는 01_node_map.html</p>
+  </div>
+
+  <script>
+    const CAP={backgroundColor:'#ffffff',scale:2,useCORS:true,ignoreElements:(e)=>e.classList&&e.classList.contains('toolbar')};
+    function rect(){const el=document.getElementById('report-container');const r=el.getBoundingClientRect();const p=28;return {x:r.left+scrollX-p,y:r.top+scrollY-p,width:r.width+p*2,height:r.height+p*2};}
+    async function copyAsImage(b){const o=b.textContent;try{const c=await html2canvas(document.body,{...CAP,...rect()});const bl=await new Promise(r=>c.toBlob(r,'image/png'));await navigator.clipboard.write([new ClipboardItem({'image/png':bl})]);b.textContent='✓ Copied!';}catch(e){b.textContent='✗ Failed';}setTimeout(()=>b.textContent=o,2000);}
+    async function downloadPNG(b){const o=b.textContent;b.textContent='⏳';try{const c=await html2canvas(document.body,{...CAP,...rect()});const a=document.createElement('a');a.download='medicart_workflows.png';a.href=c.toDataURL('image/png');a.click();b.textContent='✓ Done!';}catch(e){b.textContent='✗ Failed';}setTimeout(()=>b.textContent=o,2000);}
+    async function downloadPDF(b){const o=b.textContent;b.textContent='⏳';try{const c=await html2canvas(document.body,{...CAP,...rect()});const i=c.toDataURL('image/png');const{jsPDF}=window.jspdf;const or=c.width>c.height?'landscape':'portrait';const pdf=new jsPDF({orientation:or,unit:'px',format:[c.width,c.height],hotfixes:['px_scaling']});pdf.addImage(i,'PNG',0,0,c.width,c.height);pdf.save('medicart_workflows.pdf');b.textContent='✓ Done!';}catch(e){b.textContent='✗ Failed';}setTimeout(()=>b.textContent=o,2000);}
+  </script>
+</body>
+</html>
