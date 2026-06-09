@@ -493,3 +493,40 @@ def set_display_patient(pid: str):
         "current_patient": pid,
         "updated_at": int(time.time() * 1000),
     })
+
+
+def get_expected_room() -> str:
+    """display/expected_room — 로봇이 현재 도착해 있는 병상 id. 없으면 빈문자열.
+
+    patrol 도착 시 display_bridge 가 /identify/start(room_id) 를 받아 기록한다.
+    카트 iPad QR 검증에서 '이 병상에 배정된 환자' 비교 기준으로 쓴다.
+    """
+    val = _init().reference("display/expected_room").get()
+    return str(val) if val else ""
+
+
+def set_expected_room(room: str):
+    """현재 병상 id 를 display/expected_room 에 기록(로봇 도착 트리거용)."""
+    _init().reference("display").update({
+        "expected_room": room,
+        "expected_at": int(time.time() * 1000),
+    })
+
+
+def room_assigned_patient(room: str) -> str:
+    """/rooms/{room}/patient — 그 병상에 배정된 환자 id. 없으면 빈문자열."""
+    if not room:
+        return ""
+    val = _init().reference(f"rooms/{room}/patient").get()
+    return str(val) if val else ""
+
+
+def set_intake_status(pid: str, status: str):
+    """순회 문진 결과를 환자에 기록. status: 'done'(문진완료) | 'absent'(부재중).
+
+    /patients/{id}/intake_status + intake_at(epoch ms). 매 순회마다 덮어써
+    '가장 최근 순회 결과'를 남긴다(간호사가 완료/부재중 구분용)."""
+    _init().reference(f"patients/{pid}").update({
+        "intake_status": status,
+        "intake_at": int(time.time() * 1000),
+    })

@@ -1,11 +1,19 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { getAmrs, getTargets, type AmrSnapshot, type GotoTarget } from "@/lib/api";
+import { getAmrs, getTargets, getMe, type AmrSnapshot, type GotoTarget } from "@/lib/api";
 import { PRIMARY_NS } from "@/lib/config";
+import type { Role } from "@/lib/auth";
 import { startFollow } from "@/lib/followActions";
 import { type ArrivalTarget } from "@/lib/follow";
 import FollowOverlay from "@/components/FollowOverlay";
+import RoundsIntakeOverlay, { type RoundStop } from "@/components/RoundsIntakeOverlay";
+
+// 순회 문진 정차 매핑: 회진 타겟(정확 좌표) ↔ /rooms 키(배정환자).
+const ROUND_MAP = [
+  { targetKey: "t101_1", room: "101-A", label: "101호 1번" },
+  { targetKey: "t101_2", room: "101-B", label: "101호 2번" },
+];
 
 type Banner = {
   href: string; title: string; sub: string; tone: string; soft: string;
@@ -30,6 +38,9 @@ export default function Home() {
   const [starting, setStarting] = useState(false);
   const [startWarn, setStartWarn] = useState<string | null>(null);
   const [targets, setTargets] = useState<Record<string, GotoTarget>>({});
+  const [role, setRole] = useState<Role>("patient");
+  const [roundsConfirm, setRoundsConfirm] = useState(false);
+  const [roundsActive, setRoundsActive] = useState(false);
 
   useEffect(() => {
     const load = () =>
@@ -48,6 +59,10 @@ export default function Home() {
     getTargets().then((r) => setTargets(r.targets || {})).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    getMe().then((m) => setRole(m.role)).catch(() => setRole("patient"));
+  }, []);
+
   const arrivalTargets: ArrivalTarget[] = ["pharmacy", "t101_1", "t101_2"]
     .flatMap((k) => {
       const t = targets[k];
@@ -56,6 +71,13 @@ export default function Home() {
   const dock = targets["dock"]
     ? { x: targets.dock.x, y: targets.dock.y, yaw: targets.dock.yaw }
     : { x: -8, y: -6, yaw: 0 };
+
+  // 순회 문진 정차 리스트 — 타겟 좌표 + /rooms 키.
+  const roundStops: RoundStop[] = ROUND_MAP.flatMap((m) => {
+    const t = targets[m.targetKey];
+    return t ? [{ key: m.targetKey, label: m.label, room: m.room, x: t.x, y: t.y, yaw: t.yaw }] : [];
+  });
+  const isStaff = role === "staff" || role === "admin";
 
   async function confirmStart() {
     setConfirming(false);
@@ -112,6 +134,42 @@ export default function Home() {
         startWarn={startWarn}
         onExit={() => { setFollowActive(false); setStarting(false); setStartWarn(null); }}
       />
+
+      {/* 순회 문진 모드 — 의료진(staff) 이상 전용 */}
+      {isStaff && (!roundsConfirm ? (
+        <button
+          onClick={() => setRoundsConfirm(true)}
+          className="w-full rounded-2xl px-7 py-6 mb-6 text-left text-white shadow-md flex items-center justify-between"
+          style={{ background: "linear-gradient(90deg,#6d5ae0,#4b3bbd)" }}
+        >
+          <div>
+            <div className="text-[20px] font-bold">순회 문진 시작</div>
+            <div className="text-[13px] text-white/80 mt-1">101호 1·2번을 순회하며 환자 QR 인식 후 문진을 진행합니다</div>
+          </div>
+          <span className="text-[26px]">▶</span>
+        </button>
+      ) : (
+        <div
+          className="w-full rounded-2xl px-7 py-6 mb-6 text-white shadow-md flex items-center justify-between gap-4"
+          style={{ background: "linear-gradient(90deg,#6d5ae0,#4b3bbd)" }}
+        >
+          <div className="text-[15px] font-semibold">순회 문진을 시작할까요? (101호 1·2번 순회 후 복귀·도킹)</div>
+          <div className="flex gap-2 shrink-0">
+            <button onClick={() => { setRoundsConfirm(false); setRoundsActive(true); }}
+              className="px-5 py-2.5 rounded-xl bg-white text-[#4b3bbd] font-semibold">확인</button>
+            <button onClick={() => setRoundsConfirm(false)}
+              className="px-5 py-2.5 rounded-xl bg-white/20 font-semibold">취소</button>
+          </div>
+        </div>
+      ))}
+      <RoundsIntakeOverlay
+        active={roundsActive}
+        ns={PRIMARY_NS}
+        stops={roundStops}
+        dock={dock}
+        onExit={() => { setRoundsActive(false); setRoundsConfirm(false); }}
+      />
+
       <div className="eyebrow">병동 보조 로봇</div>
       <h1 className="text-[clamp(24px,4vw,34px)] font-bold mt-1.5">통합 관제 콘솔</h1>
       <p className="text-[14px] text-ink-2 mt-2">메뉴를 선택해 관제·환자·문진·디버그로 이동합니다.</p>
