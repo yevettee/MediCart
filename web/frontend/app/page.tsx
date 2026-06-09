@@ -7,6 +7,7 @@ import { PRIMARY_NS } from "@/lib/config";
 import { startFollow } from "@/lib/followActions";
 import { type ArrivalTarget } from "@/lib/follow";
 import FollowOverlay from "@/components/FollowOverlay";
+import PatrolIntakeOverlay from "@/components/PatrolIntakeOverlay";
 
 type Banner = {
   href: string; title: string; sub: string; tone: string; soft: string; minRole: Role;
@@ -34,6 +35,8 @@ export default function Home() {
   const [role, setRole] = useState<Role>("patient");
   const [cartSending, setCartSending] = useState(false);
   const [cartMsg, setCartMsg] = useState<string | null>(null);
+  const [patrolConfirm, setPatrolConfirm] = useState(false);
+  const [patrolActive, setPatrolActive] = useState(false);
 
   async function startCart() {
     setCartSending(true); setCartMsg(null);
@@ -151,6 +154,36 @@ export default function Home() {
           <span className="text-[26px]">{cartSending ? "…" : "▶"}</span>
         </button>
       )}
+      {roleAtLeast(role, "staff") && !patrolConfirm ? (
+        <button
+          onClick={() => setPatrolConfirm(true)}
+          className="w-full rounded-2xl px-7 py-6 mb-6 text-left text-white shadow-md flex items-center justify-between"
+          style={{ background: "linear-gradient(90deg,#16a34a,#0f7a37)" }}
+        >
+          <div>
+            <div className="text-[20px] font-bold">순회 문진 시작</div>
+            <div className="text-[13px] text-white/80 mt-1">101호 병상을 순회하며 환자 QR로 문진을 자동 진행합니다</div>
+          </div>
+          <span className="text-[26px]">▶</span>
+        </button>
+      ) : roleAtLeast(role, "staff") && patrolConfirm ? (
+        <div
+          className="w-full rounded-2xl px-7 py-6 mb-6 text-white shadow-md flex items-center justify-between gap-4"
+          style={{ background: "linear-gradient(90deg,#16a34a,#0f7a37)" }}
+        >
+          <div className="text-[15px] font-semibold">순회 문진을 시작할까요? (전 환자 문진여부 리셋 후 101호 순회)</div>
+          <div className="flex gap-2 shrink-0">
+            <button onClick={() => { setPatrolConfirm(false); setPatrolActive(true); }} className="px-5 py-2.5 rounded-xl bg-white text-[#0f7a37] font-semibold">확인</button>
+            <button onClick={() => setPatrolConfirm(false)} className="px-5 py-2.5 rounded-xl bg-white/20 font-semibold">취소</button>
+          </div>
+        </div>
+      ) : null}
+      <PatrolIntakeOverlay
+        active={patrolActive}
+        ns={PRIMARY_NS}
+        targets={targets}
+        onExit={() => setPatrolActive(false)}
+      />
       <div className="eyebrow">병동 보조 로봇</div>
       <h1 className="text-[clamp(24px,4vw,34px)] font-bold mt-1.5">통합 관제 콘솔</h1>
       <p className="text-[14px] text-ink-2 mt-2">메뉴를 선택해 관제·환자·문진·디버그로 이동합니다.</p>
