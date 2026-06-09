@@ -56,10 +56,15 @@ class WebcamNode(Node):
         self._device = device
 
         self._cap = cv2.VideoCapture(device)
+        # 다수 USB 웹캠은 YUYV 로는 640x480 까지만, 1280x720 은 MJPG 로만 준다.
+        # FOURCC 를 MJPG 로 먼저 강제해야 요청 해상도가 실제로 적용된다.
+        self._cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
         if width > 0:
             self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         if height > 0:
             self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        actual_w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        actual_h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         if not self._cap.isOpened():
             self.get_logger().error(
                 f'[webcam] 카메라 열기 실패 device={device!r} — '
@@ -67,7 +72,7 @@ class WebcamNode(Node):
         else:
             self.get_logger().info(
                 f'[webcam] device={device!r} → publish {topic} '
-                f'({width}x{height}@{fps}Hz)')
+                f'(요청 {width}x{height}, 실제 {actual_w}x{actual_h}@{fps}Hz)')
 
         self._pub = self.create_publisher(Image, topic, 10)
         self.create_timer(1.0 / max(fps, 1.0), self._tick)
