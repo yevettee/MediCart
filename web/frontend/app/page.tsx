@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { getAmrs, getTargets, getMe, type AmrSnapshot, type GotoTarget } from "@/lib/api";
+import { getAmrs, getTargets, getMe, startNurseCartMission, type AmrSnapshot, type GotoTarget } from "@/lib/api";
 import { roleAtLeast, type Role } from "@/lib/auth";
 import { PRIMARY_NS } from "@/lib/config";
 import { startFollow } from "@/lib/followActions";
@@ -32,6 +32,20 @@ export default function Home() {
   const [startWarn, setStartWarn] = useState<string | null>(null);
   const [targets, setTargets] = useState<Record<string, GotoTarget>>({});
   const [role, setRole] = useState<Role>("patient");
+  const [cartSending, setCartSending] = useState(false);
+  const [cartMsg, setCartMsg] = useState<string | null>(null);
+
+  async function startCart() {
+    setCartSending(true); setCartMsg(null);
+    try {
+      await startNurseCartMission();
+      setCartMsg("카트 출발 — 로봇이 약품실로 이동합니다. (OCR은 약품 OCR 페이지에서)");
+    } catch {
+      setCartMsg("카트 출발 실패 — 권한(관리자)·연결 확인");
+    } finally {
+      setCartSending(false);
+    }
+  }
 
   useEffect(() => {
     getMe().then((m) => setRole(m.role)).catch(() => setRole("patient"));
@@ -121,6 +135,22 @@ export default function Home() {
         startWarn={startWarn}
         onExit={() => { setFollowActive(false); setStarting(false); setStartWarn(null); }}
       />
+      {roleAtLeast(role, "admin") && (
+        <button
+          onClick={startCart}
+          disabled={cartSending}
+          className="w-full rounded-2xl px-7 py-6 mb-6 text-left text-white shadow-md flex items-center justify-between disabled:opacity-60"
+          style={{ background: "linear-gradient(90deg,#2f74e0,#1f5bc0)" }}
+        >
+          <div>
+            <div className="text-[20px] font-bold">카트 출발 (시나리오 B)</div>
+            <div className="text-[13px] text-white/80 mt-1">
+              {cartMsg ?? "약품실 이동 → OCR 대기 → 간호사 추종 → 홈 복귀·도킹"}
+            </div>
+          </div>
+          <span className="text-[26px]">{cartSending ? "…" : "▶"}</span>
+        </button>
+      )}
       <div className="eyebrow">병동 보조 로봇</div>
       <h1 className="text-[clamp(24px,4vw,34px)] font-bold mt-1.5">통합 관제 콘솔</h1>
       <p className="text-[14px] text-ink-2 mt-2">메뉴를 선택해 관제·환자·문진·디버그로 이동합니다.</p>

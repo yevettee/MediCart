@@ -221,3 +221,20 @@ def test_intake_reset_updates_empty():
 
 def test_mark_intake_done_rejects_bad_pid():
     assert fb_read.mark_intake_done("not-a-pid") is False
+
+
+# ── 시나리오 B — nurse_cart (pure) ─────────────────────────────────────────────
+def test_mission_actions_includes_nurse_cart_mission():
+    assert "nurse_cart_mission" in fb_read.MISSION_ACTIONS
+
+
+def test_mission_payload_accepts_nurse_cart_mission():
+    p = fb_read.mission_payload("nurse_cart_mission", None, 123)
+    assert p["action"] == "nurse_cart_mission" and p["status"] == "pending"
+
+
+def test_phase_or_idle():
+    assert fb_read._phase_or_idle(None) == "idle"
+    assert fb_read._phase_or_idle("") == "idle"
+    assert fb_read._phase_or_idle(123) == "idle"
+    assert fb_read._phase_or_idle("tracking") == "tracking"

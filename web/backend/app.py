@@ -330,6 +330,38 @@ def ocr_done():
     return jsonify({"ok": True})
 
 
+# ── 시나리오 B — 간호사 카트 (nurse_cart) 트리거 ──────────────────────────────
+@app.post("/api/missions")
+def create_mission():
+    """미션 시작 (admin) — '카트 출발' 등. body {action} → PRIMARY_NS mission_pool."""
+    body = request.get_json(force=True, silent=True) or {}
+    try:
+        mid, mission = fb_read.push_mission(fb_read.PRIMARY_NS, body.get("action"))
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "id": mid, "mission": mission})
+
+
+@app.post("/api/nurse_cart/ocr_done")
+def nurse_cart_ocr_done():
+    """OCR 완료 (staff) → {ns}/nurse_cart/ocr_done = true. 로봇: 입구 이동 후 추종 시작."""
+    fb_read.set_ocr_done(fb_read.PRIMARY_NS, True)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/nurse_cart/round_done")
+def nurse_cart_round_done():
+    """회진 종료 (staff) → {ns}/nurse_cart/round_done = true. 로봇: 추종 중지·홈 도킹."""
+    fb_read.set_round_done(fb_read.PRIMARY_NS, True)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/nurse_cart/phase")
+def nurse_cart_phase():
+    """로봇 현재 단계 (공개). idle | arrived | tracking | done."""
+    return jsonify({"phase": fb_read.get_nurse_cart_phase(fb_read.PRIMARY_NS)})
+
+
 # ── 로봇 명령 하달 (mission_pool, ROS 노드 통신 없음) ─────────────────────────
 @app.post("/api/robots/<ns>/missions")
 def robot_mission(ns):

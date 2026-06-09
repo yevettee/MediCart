@@ -1,8 +1,9 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  getPatients, getInjections, verifyInjection, confirmInjection, ocr as runOcr, setOcrDone,
-  type Patient, type Injection,
+  getPatients, getInjections, verifyInjection, confirmInjection, ocr as runOcr,
+  nurseCartOcrDone, nurseCartRoundDone, getNurseCartPhase,
+  type Patient, type Injection, type NurseCartPhase,
 } from "@/lib/api";
 import { decideQr } from "@/lib/ocrQr";
 
@@ -33,9 +34,11 @@ export default function OcrPage() {
   const [camErr, setCamErr] = useState("");
   const [camInfo, setCamInfo] = useState("");
 
-  /* 완료 신호 */
+  /* 시나리오 B — 완료 신호 + 로봇 단계 */
   const [doneSending, setDoneSending] = useState(false);
   const [doneMsg, setDoneMsg] = useState("");
+  const [roundSending, setRoundSending] = useState(false);
+  const [phase, setPhase] = useState<NurseCartPhase>("idle");
 
   /* OCR 모드 */
   const [ocrMode, setOcrMode] = useState<"single" | "qr">("single");
@@ -265,16 +268,40 @@ export default function OcrPage() {
   /* 검증 버튼 */
   function handleVerify() { verifyWith(ocrText); }
 
-  /* 완료 → RTDB robot6/nurse_cart/ocr_done = true */
+  /* 로봇 단계 폴링 (idle|arrived|tracking|done) */
+  useEffect(() => {
+    let alive = true;
+    const tick = () => getNurseCartPhase()
+      .then((r) => { if (alive) setPhase(r.phase); })
+      .catch(() => {});
+    tick();
+    const t = setInterval(tick, 2000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+
+  /* OCR 완료 → 로봇: 약품실 입구 이동 후 간호사 추종 시작 */
   async function handleDone() {
     setDoneSending(true); setDoneMsg("");
     try {
-      await setOcrDone("robot6");
-      setDoneMsg("완료 신호 전송됨 — robot6/nurse_cart/ocr_done = true");
+      await nurseCartOcrDone();
+      setDoneMsg("OCR 완료 전송됨 — 로봇이 입구로 이동 후 추종을 시작합니다.");
     } catch (e) {
       setDoneMsg("전송 실패: " + String(e));
     } finally {
       setDoneSending(false);
+    }
+  }
+
+  /* 회진 종료 → 로봇: 추종 중지 후 홈 복귀·도킹 */
+  async function handleRoundDone() {
+    setRoundSending(true); setDoneMsg("");
+    try {
+      await nurseCartRoundDone();
+      setDoneMsg("회진 종료 전송됨 — 로봇이 홈으로 복귀해 도킹합니다.");
+    } catch (e) {
+      setDoneMsg("전송 실패: " + String(e));
+    } finally {
+      setRoundSending(false);
     }
   }
 
@@ -289,6 +316,30 @@ export default function OcrPage() {
           환자 선택 → 주사 처방 확인 → 웹캠 스캔 → 약품 적합 여부 검증 → DB 업데이트
         </p>
       </header>
+
+      {/* ── 시나리오 B 제어 — OCR 완료 / 회진 종료 + 로봇 단계 ── */}
+      <section className="card p-5 mb-5">
+        <div className="flex items-center gap-3 flex-wrap">
+          <h2 className="font-semibold text-ink flex items-center gap-2">
+            <CartIcon /> 간호사 카트 (시나리오 B)
+          </h2>
+          <PhaseBadge phase={phase} />
+          <div className="ml-auto flex gap-2">
+            <button onClick={handleDone} disabled={doneSending}
+              className="rounded-xl bg-teal text-white px-4 py-2 text-sm font-semibold hover:bg-teal-600 disabled:opacity-50 transition-colors flex items-center gap-2">
+              {doneSending ? <Spinner /> : null} OCR 완료
+            </button>
+            <button onClick={handleRoundDone} disabled={roundSending}
+              className="rounded-xl bg-ink text-white px-4 py-2 text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-colors flex items-center gap-2">
+              {roundSending ? <Spinner /> : null} 회진 종료
+            </button>
+          </div>
+        </div>
+        <p className="text-ink-3 text-xs mt-2">
+          OCR 완료 → 로봇이 약품실 입구로 이동 후 추종 시작 · 회진 종료 → 로봇이 홈으로 복귀·도킹
+        </p>
+        {doneMsg && <p className="text-teal text-xs mt-2">{doneMsg}</p>}
+      </section>
 
       <div className="grid md:grid-cols-2 gap-5">
         {/* ── 왼쪽: 웹캠 + 스캔 ── */}
@@ -585,6 +636,30 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-ink-3 w-16 shrink-0">{label}</span>
       <span className="text-ink font-medium">{value}</span>
     </div>
+  );
+}
+
+function PhaseBadge({ phase }: { phase: NurseCartPhase }) {
+  const map: Record<NurseCartPhase, { label: string; cls: string }> = {
+    idle:     { label: "대기",        cls: "bg-surface-2 text-ink-3" },
+    arrived:  { label: "약품실 도착",  cls: "bg-amber-soft text-amber" },
+    tracking: { label: "간호사 추종 중", cls: "bg-teal-soft text-teal" },
+    done:     { label: "복귀 완료",     cls: "bg-green-soft text-green" },
+  };
+  const m = map[phase] ?? map.idle;
+  return (
+    <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1.5 ${m.cls}`}>
+      <span className="w-1.5 h-1.5 rounded-full bg-current" /> 로봇: {m.label}
+    </span>
+  );
+}
+
+function CartIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="20" r="1.4" /><circle cx="18" cy="20" r="1.4" />
+      <path d="M2 3h2l2.5 12.5a1.6 1.6 0 0 0 1.6 1.3h8.4a1.6 1.6 0 0 0 1.6-1.3L21.5 7H6" />
+    </svg>
   );
 }
 

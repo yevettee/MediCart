@@ -132,7 +132,8 @@ def vitals_from_visit(visit):
 
 # ── mission_pool (웹→로봇 DB 명령 하달, ROS 노드 통신 없음) ────────────────────
 ROBOT_NAMESPACES = ("robot3", "robot6")
-MISSION_ACTIONS = ("shutdown", "reboot", "ros_restart", "dock", "undock")   # 시스템(momentary)
+MISSION_ACTIONS = ("shutdown", "reboot", "ros_restart", "dock", "undock",
+                   "nurse_cart_mission")                                    # 시스템(momentary)
 MODE_ACTIONS = ("start", "stop", "clear")                                   # 모드 중재(continuous)
 MODE_NAMES = ("round", "patrol", "errand", "guide", "intake")               # mission_manager 모드
 
@@ -308,6 +309,22 @@ def set_ocr_done(ns, done=True):
     """{ns}/nurse_cart/ocr_done 설정 — 웹 OCR 완료 버튼 → 로봇측 nurse_cart 신호."""
     _init().reference(f"{_valid_ns(ns)}/nurse_cart/ocr_done").set(bool(done))
     return True
+
+
+def set_round_done(ns, done=True):
+    """{ns}/nurse_cart/round_done 설정 — 회진 종료 버튼 → 로봇 추종 중지·홈 도킹."""
+    _init().reference(f"{_valid_ns(ns)}/nurse_cart/round_done").set(bool(done))
+    return True
+
+
+def _phase_or_idle(v):
+    """RTDB 값 → 단계 문자열(순수). 미설정/비문자열은 idle."""
+    return v if isinstance(v, str) and v else "idle"
+
+
+def get_nurse_cart_phase(ns):
+    """{ns}/nurse_cart/phase 읽기(로봇이 기록) → idle|arrived|tracking|done."""
+    return _phase_or_idle(_init().reference(f"{_valid_ns(ns)}/nurse_cart/phase").get())
 
 
 def camera_stream(ns):

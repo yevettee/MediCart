@@ -91,3 +91,40 @@ def test_confirm_injection_bad_pid(monkeypatch):
 def test_confirm_injection_requires_staff():
     client.set_cookie("intel_auth", "")
     assert client.post("/api/patients/P-2024-0001/injections/inj1/confirm").status_code == 401
+
+
+# ── 시나리오 B — nurse_cart 트리거 라우트 ──────────────────────────────────────
+def test_create_mission_requires_admin(monkeypatch):
+    monkeypatch.setattr(flask_app.fb_read, "push_mission",
+                        lambda ns, action, *a, **k: ("mid1", {"action": action}))
+    client.set_cookie("intel_auth", "STAFFTOK")   # staff → 거부
+    assert client.post("/api/missions", json={"action": "nurse_cart_mission"}).status_code == 401
+    client.set_cookie("intel_auth", "ADMINTOK")
+    r = client.post("/api/missions", json={"action": "nurse_cart_mission"})
+    assert r.status_code == 200 and r.get_json()["ok"] is True
+
+
+def test_nurse_cart_ocr_done_staff(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(flask_app.fb_read, "set_ocr_done",
+                        lambda ns, done=True: seen.setdefault("v", (ns, done)) or True)
+    client.set_cookie("intel_auth", "")           # 비로그인 → 거부
+    assert client.post("/api/nurse_cart/ocr_done").status_code == 401
+    client.set_cookie("intel_auth", "STAFFTOK")
+    assert client.post("/api/nurse_cart/ocr_done").status_code == 200
+    assert seen["v"][1] is True
+
+
+def test_nurse_cart_round_done_staff(monkeypatch):
+    monkeypatch.setattr(flask_app.fb_read, "set_round_done", lambda ns, done=True: True)
+    client.set_cookie("intel_auth", "")
+    assert client.post("/api/nurse_cart/round_done").status_code == 401
+    client.set_cookie("intel_auth", "STAFFTOK")
+    assert client.post("/api/nurse_cart/round_done").status_code == 200
+
+
+def test_nurse_cart_phase_public(monkeypatch):
+    monkeypatch.setattr(flask_app.fb_read, "get_nurse_cart_phase", lambda ns: "tracking")
+    client.set_cookie("intel_auth", "")           # 비로그인도 허용
+    r = client.get("/api/nurse_cart/phase")
+    assert r.status_code == 200 and r.get_json()["phase"] == "tracking"
