@@ -1,16 +1,14 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { getPatient, setDisplayPatient, type Patient } from "@/lib/api";
+import { useQrScanner } from "@/lib/useQrScanner";
 
 const PID_RE = /^P-\d{4}-\d{4}$/;
-const SCAN_INTERVAL_MS = 300;   // QR 디코딩 주기 (ms)
 const COOLDOWN_MS = 3000;       // 같은 QR 연속 스캔 방지 (ms)
 
 export default function QrPage() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [camOn, setCamOn] = useState(false);
-  const [camErr, setCamErr] = useState("");
-  const [camInfo, setCamInfo] = useState("");
+  const cooldownRef = useRef<number>(0); // 마지막 스캔 성공 시각
+  const scanningRef = useRef(false);
 
   const [lastPid, setLastPid] = useState("");
   const [lastPatient, setLastPatient] = useState<Patient | null>(null);
@@ -18,63 +16,9 @@ export default function QrPage() {
   const [sendErr, setSendErr] = useState("");
   const [rawQr, setRawQr] = useState<string | null>(null); // 디버그: 읽힌 원본 QR 값
 
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const cooldownRef = useRef<number>(0); // 마지막 스캔 성공 시각
-  const scanningRef = useRef(false);
-
-  /* 웹캠 시작 — USB 외부 카메라 우선 */
-  const startCam = useCallback(async () => {
-    setCamErr("");
-    try {
-      const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const cams = devices.filter((d) => d.kind === "videoinput");
-      const usbCam = cams.find((d) => !/integrated|facetime|built.?in/i.test(d.label));
-      const tempDeviceId = tempStream.getVideoTracks()[0]?.getSettings()?.deviceId;
-      let stream = tempStream;
-
-      if (usbCam && tempDeviceId !== usbCam.deviceId) {
-        tempStream.getTracks().forEach((t) => t.stop());
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: { exact: usbCam.deviceId }, width: 1280, height: 720 },
-        });
-      }
-
-      const v = videoRef.current;
-      if (v) {
-        v.srcObject = stream;
-        setCamOn(true);
-        await v.play();
-        setCamInfo(stream.getVideoTracks()[0]?.label || "카메라");
-      }
-    } catch {
-      setCamErr("웹캠을 열 수 없습니다. 브라우저 권한을 확인하세요.");
-    }
-  }, []);
-
-  /* QR 스캔 → Firebase 전송 */
-  const scanFrame = useCallback(async () => {
-    const v = videoRef.current;
-    if (!v || !camOn) return;
-    if (!v.videoWidth || !v.videoHeight) return;
+  /* QR 디코드 → PID 검증·쿨다운·Firebase 전송 */
+  const onDecode = useCallback(async (raw: string) => {
     if (Date.now() - cooldownRef.current < COOLDOWN_MS) return;
-
-    // 캔버스 캡처 + jsQR 감지 (동기 처리, scanningRef 불필요)
-    const canvas = document.createElement("canvas");
-    canvas.width = v.videoWidth;
-    canvas.height = v.videoHeight;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(v, 0, 0);
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-    const { default: jsQR } = await import("jsqr");
-    const code = jsQR(imageData.data, imageData.width, imageData.height);
-
-    // QR 미감지 → 다음 인터벌까지 대기 (아무 상태도 바꾸지 않음)
-    if (!code) return;
-
-    const raw = code.data.trim();
     setRawQr(raw); // 읽힌 내용 항상 표시 (디버그)
 
     // 환자 ID 형식이 아니면 전송하지 않음
@@ -99,17 +43,9 @@ export default function QrPage() {
       setSending(false);
       scanningRef.current = false;
     }
-  }, [camOn]);
+  }, []);
 
-  /* QR 스캔 인터벌 관리 */
-  useEffect(() => {
-    if (camOn) {
-      intervalRef.current = setInterval(scanFrame, SCAN_INTERVAL_MS);
-    } else {
-      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
-    }
-    return () => { if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; } };
-  }, [camOn, scanFrame]);
+  const { videoRef, camOn, camErr, camInfo, start: startCam } = useQrScanner(onDecode);
 
   return (
     <div className="p-6 max-w-2xl">
