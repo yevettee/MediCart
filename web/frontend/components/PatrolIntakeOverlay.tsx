@@ -39,6 +39,7 @@ export default function PatrolIntakeOverlay({ active, ns, targets, onExit }: Pro
   const onDecode = useCallback(async (raw: string) => {
     if (stepRef.current !== "scanning" || !PID_RE.test(raw)) return;
     const p = await getPatient(raw).catch(() => null);
+    if (stepRef.current !== "scanning") return;   // await 중 단계 이탈 시 늦은 디코드 폐기
     const decision = decideAfterScan(p);
     if (decision === "unknown") { setNote(`등록되지 않은 QR: ${raw}`); return; }
     setPid(raw);
@@ -48,11 +49,16 @@ export default function PatrolIntakeOverlay({ active, ns, targets, onExit }: Pro
 
   const { videoRef, camOn, camErr, start: startCam, stop: stopCam } = useQrScanner(onDecode);
 
+  // 활성화 시 1회 초기화 (SSE 재연결과 무관 — onopen 에 두면 재연결마다 순회가 리셋됨)
+  useEffect(() => {
+    if (!active) return;
+    setStep("intro"); setIdx(0); setPid(""); setPose(undefined); setIsDocked(undefined); setNote("");
+  }, [active]);
+
   // SSE 자가 구독(active 동안). pose/dock 수신.
   useEffect(() => {
     if (!active) return;
     const es = new EventSource(`${API_BASE}/api/stream`, { withCredentials: true });
-    es.onopen = () => { setStep("intro"); setIdx(0); setPose(undefined); setIsDocked(undefined); setNote(""); };
     es.onmessage = (e) => {
       try {
         const d = JSON.parse(e.data);
