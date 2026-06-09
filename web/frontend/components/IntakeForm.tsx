@@ -10,8 +10,13 @@ type Field =
 export const SECTIONS: { n: string; title: string; fields: Field[] }[] = [
   { n: "01", title: "내원 정보", fields: [
     { id: "방문일", label: "방문일", type: "date" },
-    { id: "진료유형", label: "진료유형", type: "radio", options: ["초진", "재진"] },
-    { id: "진료과", label: "진료과", type: "text" },
+    { id: "진료유형", label: "진료유형", type: "select", options: ["초진", "재진"] },
+    { id: "진료과", label: "진료과", type: "select", options: [
+      "내과", "외과", "정형외과", "신경외과", "신경과", "흉부외과", "성형외과",
+      "소아청소년과", "산부인과", "정신건강의학과", "피부과", "안과", "이비인후과",
+      "비뇨의학과", "가정의학과", "응급의학과", "재활의학과", "마취통증의학과",
+      "영상의학과", "진단검사의학과",
+    ] },
   ]},
   { n: "02", title: "주호소 (CC)", fields: [
     { id: "주호소(CC)", label: "주호소 / 내원 사유", type: "textarea" },
@@ -32,8 +37,8 @@ export const SECTIONS: { n: string; title: string; fields: Field[] }[] = [
   { n: "04", title: "간호 / 기타", fields: [
     { id: "금일 복약 여부", label: "금일 복약 여부", type: "select", options: ["복용", "미복용", "해당없음"] },
     { id: "최근 발열_감염노출", label: "최근 발열 / 감염 노출", type: "text" },
-    { id: "최근 검사_예정 검사", label: "최근 / 예정 검사", type: "text" },
-    { id: "보고 필요", label: "의료진 보고 필요", type: "radio", options: ["N", "Y"] },
+    { id: "최근 검사_예정 검사", label: "최근 / 예정 검사", type: "date" },
+    { id: "보고 필요", label: "의료진 보고 필요", type: "select", options: ["N", "Y"] },
     { id: "간호 관찰사항", label: "간호 관찰사항", type: "textarea" },
     { id: "작성 간호사", label: "작성 간호사", type: "text" },
   ]},
