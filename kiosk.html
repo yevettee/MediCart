@@ -26,7 +26,8 @@
       box-shadow: 0 2px 12px rgba(37,99,235,.4); position: sticky; top: 0; z-index: 50;
     }
     .h-logo { font-size: 22px; font-weight: 800; display:flex; align-items:baseline; gap:6px; white-space:nowrap; }
-    .h-logo > span:first-child { color: #93c5fd; }
+    .h-logo-name { white-space:nowrap; }
+    .h-logo-accent { color: #93c5fd; }
     .h-logo-sub { font-size: 11px; font-weight: 500; color: rgba(255,255,255,.65); letter-spacing:.02em; white-space:nowrap; }
     .h-right { display: flex; align-items: center; gap: 8px; }
     @media(max-width:480px) {
@@ -184,7 +185,7 @@
 <body>
 
 <header>
-  <div class="h-logo">두브란<span>스</span><span class="h-logo-sub" id="h-title-text">병원 안내</span></div>
+  <div class="h-logo"><span class="h-logo-name">두브란<span class="h-logo-accent">스</span></span><span class="h-logo-sub" id="h-title-text">병원 안내</span></div>
   <div class="h-right">
     <div class="lang-sel">
       <button class="lang-btn active" onclick="setLanguage('ko')">🇰🇷</button>
