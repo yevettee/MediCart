@@ -25,10 +25,17 @@
       padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
       box-shadow: 0 2px 12px rgba(37,99,235,.4); position: sticky; top: 0; z-index: 50;
     }
-    .h-logo { font-size: 22px; font-weight: 800; display:flex; align-items:baseline; gap:8px; }
+    .h-logo { font-size: 22px; font-weight: 800; display:flex; align-items:baseline; gap:6px; white-space:nowrap; }
     .h-logo > span:first-child { color: #93c5fd; }
-    .h-logo-sub { font-size: 12px; font-weight: 500; color: rgba(255,255,255,.65); letter-spacing:.02em; }
-    .h-right { display: flex; align-items: center; gap: 12px; }
+    .h-logo-sub { font-size: 11px; font-weight: 500; color: rgba(255,255,255,.65); letter-spacing:.02em; white-space:nowrap; }
+    .h-right { display: flex; align-items: center; gap: 8px; }
+    @media(max-width:480px) {
+      header { padding: 10px 14px; }
+      .h-logo { font-size: 18px; }
+      .h-logo-sub { display: none; }
+      .h-clock { display: none; }
+      .lang-btn { font-size: 13px; padding: 1px 5px; }
+    }
     .h-clock { font-size: 14px; color: rgba(255,255,255,.75); }
     .h-staff-link {
       font-size: 12px; color: rgba(255,255,255,.6);
