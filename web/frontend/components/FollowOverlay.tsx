@@ -28,6 +28,7 @@ export default function FollowOverlay({ active, ns, targets, dock, onExit }: Pro
       setPhase("following");
       prevKey.current = null;
       setArrivalLabel(null);
+      setIsDocked(undefined);
     };
     es.onmessage = (e) => {
       try {
