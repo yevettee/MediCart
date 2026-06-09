@@ -212,3 +212,57 @@ stateDiagram-v2
     REACTIVE 모드: cmd_vel은 safety_gate 통과 (전방 lidar 0.30m / depth 0.20m, 전진만 차단)
   end note
 ```
+
+## 5. 시나리오 / 기능 플로우
+
+### 5.1 시나리오 A — 자율순찰 + QR신원 + 문진
+
+```mermaid
+flowchart TD
+  S0([Station 도킹]) --> U0["Undock<br/>/robot6/undock (irobot_create_msgs/Undock)"]
+  U0 --> L0["병상 waypoint 획득<br/>ListRooms /robot6/db/list_rooms"]
+  L0 --> P0["다음 병실 이동<br/>NavigateToPose /robot6/navigate_to_pose"]
+  P0 --> ID["재실+신원 확인<br/>identifier_node → /robot6/patient_identified"]
+  ID --> Q0{재실·신원 일치?}
+  Q0 -- no --> UVS["UpdateVisitStatus (DB 기록) → 마지막 재방문"]
+  UVS --> Q1
+  Q0 -- yes --> VAL["처방/환자 검증<br/>GetPrescription /robot6/db/get_prescription"]
+  VAL --> IV["웹 문진표 작성<br/>/intake → RTDB patients/intake"]
+  IV --> Q1{남은 병실?}
+  Q1 -- yes --> P0
+  Q1 -- no --> R0["복귀 NavigateToPose(station)"]
+  R0 --> D0["Dock /robot6/dock"] --> E0([도킹 완료])
+```
+
+### 5.2 시나리오 B — 간호사 추종 + 약품 OCR
+
+```mermaid
+flowchart TD
+  B0([Station 도킹]) --> BU["Undock"]
+  BU --> TR["간호사 추종 시작<br/>Trigger /robot6/start_tracking"]
+  TR --> FOL["추종 주행<br/>tracker_node → /robot6/mode/round/cmd_vel"]
+  FOL --> GATE{전방 장애물?<br/>lidar 0.30m / depth 0.20m}
+  GATE -- yes --> STOP["safety_gate 전진 차단"] --> FOL
+  GATE -- no --> ARR["호실 도착 (STANDBY)"]
+  ARR --> SC["약품 OCR 검증<br/>웹 /ocr(GCP Vision) ↔ 처방 step"]
+  SC --> Q2{투약 완료?}
+  Q2 -- no --> SC
+  Q2 -- yes --> BR["복귀 NavigateToPose(station)"]
+  BR --> BD["Dock"] --> BE0([도킹 완료])
+```
+
+### 5.3 회진 풀스크린 모드 (웹 주도)
+
+```mermaid
+flowchart TD
+  H0["홈 / '회진 모드' 배너 클릭"] --> CF{재확인}
+  CF -- 확인 --> UD["docked면 undock<br/>pushMission(undock) + dock_status 대기"]
+  UD --> RD["saveMode(start, round) → round 추종 시작"]
+  RD --> OV["FollowOverlay 풀스크린 (SSE pose 구독)"]
+  OV --> NP{"약품실/101호 1·2<br/>1m 근접?"}
+  NP -- yes --> TXT["'OO에 도착' 표시 (로봇은 계속 추종)"]
+  TXT --> OV
+  NP -- no --> OV
+  OV --> RB["'홈 위치로 복귀' 버튼"]
+  RB --> RH["saveMode(stop,round) + goto(dock,dock_after) → 도킹 후 종료"]
+```
