@@ -1,6 +1,6 @@
 amcl:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
     alpha1: 0.2
     alpha2: 0.2
     alpha3: 0.2
@@ -40,19 +40,19 @@ amcl:
     scan_topic: scan
     set_initial_pose: true
     initial_pose:
-      x: -8.356
-      y: -6.478
+      x: -0.354229
+      y: -0.118972
       z: 0.0
-      yaw: -2.364
+      yaw: -0.0042011
 
 map_server:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
     yaml_filename: ""
 
 map_saver:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
     save_map_timeout: 5.0
     free_thresh_default: 0.25
     occupied_thresh_default: 0.65
