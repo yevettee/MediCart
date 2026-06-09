@@ -84,6 +84,7 @@ export type AmrSnapshot = {
   dock?: { is_docked: boolean };
   imu?: { yaw_rate: number };
   mode?: string;
+  nurse_cart_phase?: string;
   state?: string;
   online?: boolean;
   scan?: { angle_min: number; angle_inc: number; range_max: number; ranges: (number | null)[] };

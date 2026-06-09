@@ -52,6 +52,7 @@ def topics_to_snapshot(node):
             snap[field] = node[topic]
     has_topic = bool(snap)
     snap["mode"] = node.get("robot_mode", "idle")
+    snap["nurse_cart_phase"] = (node.get("nurse_cart") or {}).get("phase", "idle")
     snap["online"] = bool(node.get("online", False))
     snap["stamp"] = node.get("stamp", 0)
     # 센서 토픽이 하나도 없고 stamp 도 없으면(예: cmd 만 있는 노드) 미존재로 취급
@@ -135,6 +136,7 @@ ROBOT_NAMESPACES = ("robot3", "robot6")
 MISSION_ACTIONS = ("shutdown", "reboot", "ros_restart", "dock", "undock")   # 시스템(momentary)
 MODE_ACTIONS = ("start", "stop", "clear")                                   # 모드 중재(continuous)
 MODE_NAMES = ("round", "patrol", "errand", "guide", "intake")               # mission_manager 모드
+SEQUENCE_ACTIONS = ("patrol_mission", "nurse_cart_mission")                 # 시나리오 시퀀서
 
 
 def valid_robot_ns(ns):
@@ -161,8 +163,10 @@ def _validate_goto_params(params):
 def mission_payload(action, params, ts, mode=None):
     """{ns}/mission_pool 에 push 될 명령(화이트리스트 검증).
 
-    두 종류: 시스템 액션(dock/undock/…, mode 없음) 또는 모드 액션(start/stop/clear + mode).
-    clear 는 mode 불요(전체 모드 해제).
+    세 종류:
+      · 시스템 액션(dock/undock/…, mode 없음)
+      · 모드 액션(start/stop/clear + mode)
+      · 시퀀서 액션(patrol_mission/nurse_cart_mission — params 는 선택적 좌표 오버라이드)
     """
     if action in MISSION_ACTIONS:
         return {"action": action, "params": params or {}, "status": "pending", "ts": int(ts)}
@@ -176,6 +180,9 @@ def mission_payload(action, params, ts, mode=None):
         if mode:
             out["mode"] = mode
         return out
+    if action in SEQUENCE_ACTIONS:
+        # params 는 선택 — 없으면 ROS 시퀀서가 내부 기본값 사용
+        return {"action": action, "params": params or {}, "status": "pending", "ts": int(ts)}
     raise ValueError("invalid action")
 
 
@@ -453,6 +460,12 @@ def get_display_patient() -> str:
     db = _init()
     val = db.reference("display/current_patient").get()
     return str(val) if val else ""
+
+
+def get_nurse_cart_phase(ns: str = "robot6") -> str:
+    """RTDB /{ns}/nurse_cart/phase 반환. 없으면 'idle'."""
+    val = _init().reference(f"{ns}/nurse_cart/phase").get()
+    return str(val) if val else "idle"
 
 
 def set_display_patient(pid: str):

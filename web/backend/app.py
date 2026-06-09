@@ -248,6 +248,12 @@ def display_current():
     return jsonify({"pid": pid})
 
 
+@app.get("/api/nurse_cart/phase")
+def nurse_cart_phase():
+    """약품실 도착 상태 조회 — 인증 불필요(auth.py _OPEN). 약품실 공용 화면 폴링용."""
+    return jsonify({"phase": fb_read.get_nurse_cart_phase()})
+
+
 @app.post("/api/display/current")
 def display_set():
     body = request.get_json(force=True, silent=True) or {}

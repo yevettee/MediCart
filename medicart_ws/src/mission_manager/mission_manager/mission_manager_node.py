@@ -21,6 +21,7 @@ from .mission_executor import MissionExecutor
 from .mission_sequencer import MissionSequencer, SEQUENCE_ACTION
 from .mode_arbiter import ModeArbiter
 from .nav_executor import NavExecutor
+from .nurse_cart_sequencer import NurseCartSequencer, NURSE_CART_ACTION
 from .system_commands import SYSTEM_ACTIONS
 
 
@@ -68,6 +69,12 @@ class MissionManagerNode(Node):
         self._sequencer = MissionSequencer(
             self._executor, self._arbiter, self._publish_feedback, self.get_logger())
         self._nav = NavExecutor(self, ns, self.get_logger())
+        # 간호사 카트 시퀀서 — nurse_cart_mission(goto_pharmacy→...) 오케스트레이션.
+        self._nurse_cart = NurseCartSequencer(
+            self._nav, self._arbiter, self._publish_feedback, self.get_logger())
+        # db_node 가 RTDB ocr_done 을 감지해 발행하는 topic 을 받아 시퀀서에 전달.
+        self.create_subscription(
+            String, f'/{ns}/nurse_cart/ocr_done', self._on_nurse_cart_ocr_done, 10)
         self._cmd_pub = self.create_publisher(Twist, f'/{ns}/cmd_vel', 10)
         self._robot_mode_pub = self.create_publisher(String, f'/{ns}/robot_mode', 10)
         self.create_subscription(LaserScan, f'/{ns}/scan', self._on_scan, 10)
@@ -87,8 +94,10 @@ class MissionManagerNode(Node):
                 '[mission_manager] mission_request 파싱 실패: {} raw={!r}'.format(exc, msg.data))
             return
         action = req.get('action')
-        if action in SEQUENCE_ACTIONS:                # patrol_mission(undock→patrol→dock)
+        if action == SEQUENCE_ACTION:                  # patrol_mission(undock→patrol→dock)
             self._sequencer.start(req.get('id'), req.get('params'))
+        elif action == NURSE_CART_ACTION:             # nurse_cart_mission(goto_pharmacy→...)
+            self._nurse_cart.start(req.get('id'), req.get('params'))
         elif action in SYSTEM_ACTIONS:               # dock/undock/ros_restart/reboot/shutdown
             self._executor.handle(req)
         elif action == 'goto':                        # 좌표 이동(Nav2 + dock-aware)
@@ -102,6 +111,10 @@ class MissionManagerNode(Node):
             self._publish_feedback({'id': req.get('id'), 'status': 'failed',
                                     'detail': 'unknown action: {}'.format(action),
                                     'ts': int(time.time() * 1000)})
+
+    def _on_nurse_cart_ocr_done(self, _msg):
+        """db_node 경유 OCR 완료 신호 → nurse_cart 시퀀서 WAIT_OCR 해제."""
+        self._nurse_cart.signal_ocr_done()
 
     def _handle_goto(self, req):
         """goto 좌표 이동: arbiter 'goto'(nav) 점거 → NavExecutor 실행 → 종료 시 해제·보고."""
@@ -144,7 +157,8 @@ class MissionManagerNode(Node):
 
     def _control_tick(self):
         now = time.monotonic()
-        self._sequencer.tick(now)             # 시퀀스 단계 진행(undock→patrol→dock)
+        self._sequencer.tick(now)             # 시나리오 A (undock→patrol→dock)
+        self._nurse_cart.tick(now)            # 간호사 카트 (goto_pharmacy→...)
         mode, twist = self._arbiter.tick(now, self._forward_clearance, None)
         if twist is not None:                 # REACTIVE 활성 → 게이트된 속도
             self._publish_cmd(twist[0], twist[1])

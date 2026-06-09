@@ -7,7 +7,8 @@ import hmac
 
 ROLE_RANK = {"patient": 0, "staff": 1, "admin": 2}
 
-_OPEN = {"/api/health", "/api/login", "/api/me", "/api/logout", "/api/intake"}
+_OPEN = {"/api/health", "/api/login", "/api/me", "/api/logout", "/api/intake",
+         "/api/nurse_cart/phase"}  # 약품실 도착 감지 — 로그인 없이 폴링 가능
 _STAFF_PREFIXES = ("/api/patients", "/api/ocr")
 
 

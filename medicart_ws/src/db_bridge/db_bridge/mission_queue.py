@@ -17,6 +17,7 @@ ACTION_TIMEOUTS = {
     "reboot": 60.0,
     "shutdown": 60.0,
     "patrol_mission": 900.0,
+    "nurse_cart_mission": 3600.0,  # 간호사 카트: undock→약품실→OCR 대기→복귀 전체
 }
 DEFAULT_TIMEOUT = 90.0
 
