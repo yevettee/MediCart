@@ -47,9 +47,27 @@ IDLE, FETCH, NAV, DWELL, DONE, FAILED = 'idle', 'fetch', 'nav', 'dwell', 'done',
 #  프레임으로 보정되면 use_config_waypoints:=false 로 ListRooms 경로로 전환 가능.)
 # room_id 는 RTDB /rooms 키(101-A 등)에 맞춰 식별 검증(current_room↔DB room)이 닫히게 한다.
 BED_WAYPOINTS = [
-    {'room_id': '101-A', 'x': -12.0, 'y': -5.0, 'yaw': -0.00143, 'patient_id': ''},  # 101호 1번
-    {'room_id': '101-B', 'x': -12.0, 'y': -6.0, 'yaw': -0.00143, 'patient_id': ''},  # 101호 2번
-    {'room_id': '102-A', 'x': -13.0, 'y': -8.0, 'yaw': -0.00143, 'patient_id': ''},  # 102호 호출
+    {
+        'room_id': '101-A',
+        'x': -4.39228,
+        'y': -0.701007,
+        'yaw': 2.47368,
+        'patient_id': '',
+    },  # 101호 1번
+    {
+        'room_id': '101-B',
+        'x': -4.21788,
+        'y': -1.58667,
+        'yaw': -2.63024,
+        'patient_id': '',
+    },  # 101호 2번
+    {
+        'room_id': '102-A',
+        'x': -3.94329,
+        'y': -3.34683,
+        'yaw': -3.1113,
+        'patient_id': '',
+    },  # 102호 호출
 ]
 
 
@@ -71,9 +89,9 @@ class PatrolMode(Node):
         # 순찰 종료 후 도킹 스테이션 복귀 leg(식별 없이 주행만) — dock 은 시퀀서가 수행.
         # 좌표 출처: dashboard DEFAULT_TARGETS 'Docking Station'(dock_after).
         self.declare_parameter('return_home', True)
-        self.declare_parameter('home_x', -8.0)
-        self.declare_parameter('home_y', -6.0)
-        self.declare_parameter('home_yaw', -0.00142)
+        self.declare_parameter('home_x', -0.354229)
+        self.declare_parameter('home_y', -0.118972)
+        self.declare_parameter('home_yaw', -0.0042011)
 
         self.ns = str(self.get_parameter('namespace').value).strip('/')
         self.name = str(self.get_parameter('mode_name').value)

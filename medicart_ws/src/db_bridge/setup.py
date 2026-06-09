@@ -22,6 +22,7 @@ setup(
             'db_node = db_bridge.db_node:main',
             'prescription_server = db_bridge.prescription_server:main',
             'rooms_server = db_bridge.rooms_server:main',
+            'display_bridge = db_bridge.display_bridge:main',
         ],
     },
 )
