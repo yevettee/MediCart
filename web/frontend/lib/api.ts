@@ -60,6 +60,7 @@ export type Patient = {
   "주 진료과"?: string;
   visits?: Visit[];
   intake?: unknown;
+  intake_done?: boolean;
   [k: string]: unknown;
 };
 
@@ -104,6 +105,25 @@ export async function saveMode(action: "start" | "stop" | "clear", mode: string,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, mode, params: params || {} }),
   });
+  return r.json();
+}
+
+// ── 순회 문진 회차 플래그 ────────────────────────────────────────────────────
+export async function resetIntakeRound(): Promise<{ ok: boolean; count: number }> {
+  const r = await fetch(`${API_BASE}/api/patrol/reset`, {
+    method: "POST", credentials: "include",
+  });
+  if (!r.ok) throw new Error(`/api/patrol/reset → ${r.status}`);
+  return r.json();
+}
+
+export async function markIntakeDone(pid: string): Promise<{ ok: boolean }> {
+  const r = await fetch(`${API_BASE}/api/patrol/intake-done`, {
+    method: "POST", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pid }),
+  });
+  if (!r.ok) throw new Error(`/api/patrol/intake-done → ${r.status}`);
   return r.json();
 }
 
