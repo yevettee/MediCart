@@ -179,13 +179,13 @@ graph LR
 
 ```mermaid
 stateDiagram-v2
-  [*] --> pending : web push (mission_pool)
+  [*] --> pending : web push — mission_pool
   pending --> sent : 우선순위→ts 선택 후 mission_request 발행
   sent --> running : accepted/running 수신
-  sent --> failed : 15s 내 accepted 미수신 (START_TIMEOUT)
+  sent --> failed : 15s 내 accepted 미수신 — START_TIMEOUT
   running --> done : mission_feedback done
   running --> failed : mission_feedback failed
-  running --> preempted : 더 높은 우선순위 도착 (현재 폐기·드롭)
+  running --> preempted : 더 높은 우선순위 도착 — 현재 폐기·드롭
   done --> [*]
   failed --> [*]
   preempted --> [*]
@@ -201,11 +201,11 @@ stateDiagram-v2
 ```mermaid
 stateDiagram-v2
   [*] --> idle
-  idle --> active : start mode (active set 추가)
+  idle --> active : start mode — active set 추가
   active --> preempted_mode : 더 높은 우선순위 모드 활성
   preempted_mode --> active : 상위 모드 종료 → 복귀
   active --> idle : stop/clear 또는 status done/failed
-  active --> lost : status 무응답 3s (lost abort)
+  active --> lost : status 무응답 3s — lost abort
   lost --> idle
   note right of active
     우선순위: goto 7 (운영자) > intake 5 > round 4 > errand 3 > guide 2 > patrol 1
@@ -223,12 +223,12 @@ flowchart TD
   U0 --> L0["병상 waypoint 획득<br/>ListRooms /robot6/db/list_rooms"]
   L0 --> P0["다음 병실 이동<br/>NavigateToPose /robot6/navigate_to_pose"]
   P0 --> ID["재실+신원 확인<br/>identifier_node → /robot6/patient_identified"]
-  ID --> Q0{재실·신원 일치?}
+  ID --> Q0{"재실·신원 일치?"}
   Q0 -- no --> UVS["UpdateVisitStatus (DB 기록) → 마지막 재방문"]
   UVS --> Q1
   Q0 -- yes --> VAL["처방/환자 검증<br/>GetPrescription /robot6/db/get_prescription"]
   VAL --> IV["웹 문진표 작성<br/>/intake → RTDB patients/intake"]
-  IV --> Q1{남은 병실?}
+  IV --> Q1{"남은 병실?"}
   Q1 -- yes --> P0
   Q1 -- no --> R0["복귀 NavigateToPose(station)"]
   R0 --> D0["Dock /robot6/dock"] --> E0([도킹 완료])
@@ -241,11 +241,11 @@ flowchart TD
   B0([Station 도킹]) --> BU["Undock"]
   BU --> TR["간호사 추종 시작<br/>Trigger /robot6/start_tracking"]
   TR --> FOL["추종 주행<br/>tracker_node → /robot6/mode/round/cmd_vel"]
-  FOL --> GATE{전방 장애물?<br/>lidar 0.30m / depth 0.20m}
+  FOL --> GATE{"전방 장애물?<br/>lidar 0.30m / depth 0.20m"}
   GATE -- yes --> STOP["safety_gate 전진 차단"] --> FOL
   GATE -- no --> ARR["호실 도착 (STANDBY)"]
   ARR --> SC["약품 OCR 검증<br/>웹 /ocr(GCP Vision) ↔ 처방 step"]
-  SC --> Q2{투약 완료?}
+  SC --> Q2{"투약 완료?"}
   Q2 -- no --> SC
   Q2 -- yes --> BR["복귀 NavigateToPose(station)"]
   BR --> BD["Dock"] --> BE0([도킹 완료])
@@ -255,7 +255,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  H0["홈 / '회진 모드' 배너 클릭"] --> CF{재확인}
+  H0["홈 / '회진 모드' 배너 클릭"] --> CF{"재확인"}
   CF -- 확인 --> UD["docked면 undock<br/>pushMission(undock) + dock_status 대기"]
   UD --> RD["saveMode(start, round) → round 추종 시작"]
   RD --> OV["FollowOverlay 풀스크린 (SSE pose 구독)"]
