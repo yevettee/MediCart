@@ -210,6 +210,41 @@ def alerts():
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+@app.post("/api/robots/<ns>/missions/clear")
+def clear_robot_missions(ns):
+    fb_read.clear_missions(ns)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/robots/health")
+def robots_health():
+    return jsonify(fb_read.robots_health())
+
+
+@app.post("/api/camera/<ns>/request")
+def camera_request(ns):
+    body = request.get_json(silent=True) or {}
+    fb_read.camera_request(ns, bool(body.get("on")))
+    return jsonify({"ok": True})
+
+
+@app.get("/api/camera/<ns>/stream")
+def camera_stream(ns):
+    return Response(fb_read.camera_stream(ns), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/logs/<ns>")
+def robot_logs(ns):
+    return jsonify({"logs": fb_read.logs(ns)})
+
+
+@app.get("/api/logs/<ns>/stream")
+def robot_logs_stream(ns):
+    return Response(fb_read.log_stream(ns), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @app.post("/api/mode")
 def mode_cmd():
     body = request.get_json(force=True, silent=True) or {}
@@ -273,6 +308,14 @@ def api_ocr():
     except Exception:
         pass   # OCR 표시는 유지, RTDB 기록 실패는 비치명
     return jsonify({"text": text})
+
+
+@app.post("/api/ocr/done")
+def ocr_done():
+    """OCR 완료 버튼 → {ns}/nurse_cart/ocr_done = true (기본 robot6). staff 권한."""
+    body = request.get_json(silent=True) or {}
+    fb_read.set_ocr_done(body.get("ns") or "robot6", True)
+    return jsonify({"ok": True})
 
 
 # ── 로봇 명령 하달 (mission_pool, ROS 노드 통신 없음) ─────────────────────────

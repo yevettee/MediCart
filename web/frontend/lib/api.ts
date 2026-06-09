@@ -43,7 +43,9 @@ export async function submitIntake(payload: { name: string; room?: string; secti
 }
 
 export async function logout() {
-  await fetch(`/api/auth/logout`, { method: "POST", credentials: "include" });
+  // 로그인과 동일 오리진(Flask)으로 — Flask set_cookie 와 같은 속성으로 delete_cookie 해야
+  // intel_auth 가 실제로 지워진다. (Next 자체 라우트로 지우면 다른 오리진이라 안 지워짐 → 즉시 재로그인 버그)
+  await fetch(`${API_BASE}/api/logout`, { method: "POST", credentials: "include" }).catch(() => {});
 }
 
 export type Patient = {
@@ -152,12 +154,43 @@ export async function pushMission(
 
 export const getMissions = (ns: string) => getJSON<{ missions: Mission[] }>(`/api/robots/${ns}/missions`);
 
+export async function clearMissions(ns: string) {
+  const r = await fetch(`${API_BASE}/api/robots/${ns}/missions/clear`, {
+    method: "POST", credentials: "include",
+  });
+  return r.json() as Promise<{ ok: boolean; error?: string }>;
+}
+
+export type RobotHealth = {
+  ping_ok?: boolean; ping_ms?: number | null;
+  create3?: boolean; turtlebot4?: boolean; ip?: string; ts?: number;
+};
+export const getRobotsHealth = () => getJSON<Record<string, RobotHealth>>("/api/robots/health");
+
+export async function cameraRequest(ns: string, on: boolean) {
+  await fetch(`${API_BASE}/api/camera/${ns}/request`, {
+    method: "POST", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ on }),
+  }).catch(() => {});
+}
+
 export async function ocr(blob: Blob): Promise<{ text: string }> {
   const fd = new FormData();
   fd.append("image", blob, "capture.png");
   const r = await fetch(`${API_BASE}/api/ocr`, { method: "POST", credentials: "include", body: fd });
   if (!r.ok) throw new Error(`/api/ocr → ${r.status}`);
   return r.json();
+}
+
+/** OCR 완료 → RTDB {ns}/nurse_cart/ocr_done = true (기본 robot6). */
+export async function setOcrDone(ns = "robot6"): Promise<void> {
+  const r = await fetch(`${API_BASE}/api/ocr/done`, {
+    method: "POST", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ns }),
+  });
+  if (!r.ok) throw new Error(`/api/ocr/done → ${r.status}`);
 }
 
 export type Injection = {

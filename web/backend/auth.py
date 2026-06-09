@@ -8,6 +8,7 @@ import hmac
 ROLE_RANK = {"patient": 0, "staff": 1, "admin": 2}
 
 _OPEN = {"/api/health", "/api/login", "/api/me", "/api/logout", "/api/intake"}
+_PATIENT_PREFIXES = ("/api/display",)        # 키오스크(/display) read — 비로그인 허용
 _STAFF_PREFIXES = ("/api/patients", "/api/ocr")
 
 
@@ -33,6 +34,8 @@ def role_for_password(password, staff_pw, admin_pw):
 
 def required_role_for_path(path):
     if path in _OPEN:
+        return "patient"
+    if path.startswith(_PATIENT_PREFIXES):
         return "patient"
     if path.startswith(_STAFF_PREFIXES):
         return "staff"
