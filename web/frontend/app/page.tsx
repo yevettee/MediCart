@@ -27,6 +27,8 @@ export default function Home() {
   const [stat, setStat] = useState({ online: 0, total: 2 });
   const [confirming, setConfirming] = useState(false);
   const [followActive, setFollowActive] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startWarn, setStartWarn] = useState<string | null>(null);
   const [targets, setTargets] = useState<Record<string, GotoTarget>>({});
 
   useEffect(() => {
@@ -57,13 +59,22 @@ export default function Home() {
 
   async function confirmStart() {
     setConfirming(false);
+    setStartWarn(null);
     let docked = true;
     try {
       const a = await getAmrs();
       docked = a[PRIMARY_NS]?.dock?.is_docked ?? true;
     } catch { /* 기본 docked 가정 */ }
     setFollowActive(true);
-    startFollow(PRIMARY_NS, docked).catch(() => {});
+    setStarting(true);
+    try {
+      const ok = await startFollow(PRIMARY_NS, docked);
+      if (!ok) setStartWarn("undock 시간초과 — 도크 상태 확인 필요");
+    } catch {
+      setStartWarn("회진 시작 실패 — 다시 시도");
+    } finally {
+      setStarting(false);
+    }
   }
 
   return (
@@ -97,7 +108,9 @@ export default function Home() {
         ns={PRIMARY_NS}
         targets={arrivalTargets}
         dock={dock}
-        onExit={() => setFollowActive(false)}
+        starting={starting}
+        startWarn={startWarn}
+        onExit={() => { setFollowActive(false); setStarting(false); setStartWarn(null); }}
       />
       <div className="eyebrow">병동 보조 로봇</div>
       <h1 className="text-[clamp(24px,4vw,34px)] font-bold mt-1.5">통합 관제 콘솔</h1>

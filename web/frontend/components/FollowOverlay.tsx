@@ -10,12 +10,14 @@ type Props = {
   targets: ArrivalTarget[];
   dock: { x: number; y: number; yaw?: number };
   onExit: () => void;
+  starting?: boolean;
+  startWarn?: string | null;
 };
 
-export default function FollowOverlay({ active, ns, targets, dock, onExit }: Props) {
+export default function FollowOverlay({ active, ns, targets, dock, onExit, starting, startWarn }: Props) {
   const [pose, setPose] = useState<Pt | undefined>(undefined);
   const [isDocked, setIsDocked] = useState<boolean | undefined>(undefined);
-  const [phase, setPhase] = useState<"following" | "returning">("following");
+  const [phase, setPhase] = useState<"following" | "returning" | "returnFailed">("following");
   const [arrivalLabel, setArrivalLabel] = useState<string | null>(null);
   const prevKey = useRef<string | null>(null);
 
@@ -58,13 +60,16 @@ export default function FollowOverlay({ active, ns, targets, dock, onExit }: Pro
 
   let text: string;
   if (phase === "returning") text = "복귀 중…";
+  else if (phase === "returnFailed") text = "복귀 실패 — 다시 시도하세요";
+  else if (startWarn) text = startWarn;
+  else if (starting && !pose) text = "회진 준비 중…";
   else if (!pose) text = "위치 수신 대기…";
   else if (arrivalLabel) text = `${arrivalLabel}에 도착`;
   else text = "회진 중 — 안내를 따라오세요";
 
   const onReturn = async () => {
     setPhase("returning");
-    try { await returnHome(ns, dock); } catch { /* feedback로 추적 */ }
+    try { await returnHome(ns, dock); } catch { setPhase("returnFailed"); }
   };
 
   return (
@@ -80,7 +85,7 @@ export default function FollowOverlay({ active, ns, targets, dock, onExit }: Pro
         disabled={phase === "returning"}
         className="fixed bottom-8 right-8 px-7 py-4 rounded-2xl text-[18px] font-semibold bg-white text-[#0b1f1d] shadow-lg disabled:opacity-50"
       >
-        홈 위치로 복귀
+        {phase === "returnFailed" ? "복귀 다시 시도" : "홈 위치로 복귀"}
       </button>
     </div>
   );

@@ -23,12 +23,15 @@ export function waitDockState(ns: string, want: boolean, timeoutMs = 20000): Pro
 }
 
 // 회진 시작: docked면 undock(+완료 대기) 후 round 모드 start.
-export async function startFollow(ns: string, isDocked: boolean): Promise<void> {
+// undock 대기 타임아웃 시 false 반환(round는 이미 시작됨); 정상 시 true.
+export async function startFollow(ns: string, isDocked: boolean): Promise<boolean> {
+  let undockedOk = true;
   if (isDocked) {
     await pushMission(ns, "undock");
-    await waitDockState(ns, false, 20000);
+    undockedOk = await waitDockState(ns, false, 20000);
   }
   await saveMode("start", "round");
+  return undockedOk;
 }
 
 // 홈 복귀: round 중지 → dock 타겟으로 goto(dock_after). nav_executor가 Nav2 이동 후 도킹.
