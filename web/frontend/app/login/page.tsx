@@ -19,7 +19,8 @@ function LoginForm() {
       // 오픈 리다이렉트 방지: 같은 사이트 상대경로만 허용
       const next = params.get("next") || "/";
       const safe = next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/";
-      router.replace(safe);
+      // iOS Safari: client-side router.replace는 쿠키 미전달 케이스 있음 → 하드 리다이렉트
+      window.location.href = safe;
     } else { setErr(true); setPw(""); }
   }
 

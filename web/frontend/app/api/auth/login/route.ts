@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const FLASK = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:5000";
+const FLASK = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:5000";
 const INTEL_TOKEN = process.env.INTEL_AUTH_TOKEN ?? "";
 
 export async function POST(req: NextRequest) {

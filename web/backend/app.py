@@ -183,6 +183,18 @@ def verify_injection(pid, inj_id):
     return jsonify({"ok": True, "match": match, "status": status, "reason": reason})
 
 
+@app.post("/api/patients/<pid>/injections/<inj_id>/confirm")
+def confirm_injection(pid, inj_id):
+    """QR 환자 확인으로 처방 완료 직접 기록."""
+    if not _PID_RE.match(pid):
+        return jsonify({"error": "invalid id"}), 400
+    try:
+        fb_read.update_injection_status(pid, inj_id, "confirmed", "QR 환자 확인")
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"ok": True, "status": "confirmed"})
+
+
 # ── AMR 상태/스트림 ──────────────────────────────────────────────────────────
 @app.get("/api/amrs")
 def amrs():

@@ -1,13 +1,22 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  getPatients, getInjections, verifyInjection, ocr as runOcr,
+  getPatients, getInjections, verifyInjection, confirmInjection, ocr as runOcr,
   type Patient, type Injection,
 } from "@/lib/api";
+
+const PID_RE = /^P-\d{4}-\d{4}$/;
+const QR_COOLDOWN_MS = 3000;
 
 type InjEntry = { id: string } & Injection;
 
 type VerifyResult = { match: boolean; status: string; reason: string } | null;
+
+type QrResult =
+  | { type: "complete";        patientName: string; injCount: number }
+  | { type: "blocked_meds";    patientName: string; unready: { name: string; status: string }[] }
+  | { type: "blocked_patient"; scannedPid: string;  selectedName: string }
+  | null;
 
 export default function OcrPage() {
   /* 환자/주사 목록 */
@@ -23,9 +32,16 @@ export default function OcrPage() {
   const [camInfo, setCamInfo] = useState("");
 
   /* OCR 모드 */
-  const [ocrMode, setOcrMode] = useState<"single" | "realtime">("single");
+  const [ocrMode, setOcrMode] = useState<"single" | "qr">("single");
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scanningRef = useRef(false); // 동시 요청 방지
+
+  /* QR 환자 확인 모드 */
+  const [qrRaw, setQrRaw] = useState<string | null>(null);
+  const [qrResult, setQrResult] = useState<QrResult>(null);
+  const [qrConfirming, setQrConfirming] = useState(false);
+  const qrCooldownRef = useRef<number>(0);
+  const qrConfirmingRef = useRef(false);
 
   /* OCR */
   const [ocrText, setOcrText] = useState("");
@@ -124,24 +140,76 @@ export default function OcrPage() {
     }, "image/png");
   }, [camOn]);
 
-  /* 실시간 OCR 인터벌 관리 */
+  /* QR 환자 확인 스캔 함수 */
+  const scanQr = useCallback(async () => {
+    const v = videoRef.current;
+    if (!v || !camOn || !v.videoWidth || !v.videoHeight) return;
+    if (qrConfirmingRef.current) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = v.videoWidth;
+    canvas.height = v.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(v, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+    const { default: jsQR } = await import("jsqr");
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
+    if (!code) return;
+
+    const raw = code.data.trim();
+    setQrRaw(raw);
+    if (!PID_RE.test(raw)) return;
+
+    // ── Case 3: 다른 환자 QR ──────────────────────────────────────────
+    if (raw !== pid) {
+      const selName = patients.find((p) => p.id === pid)?.성명 ?? pid;
+      setQrResult({ type: "blocked_patient", scannedPid: raw, selectedName: selName });
+      return;
+    }
+
+    // 같은 환자 → 쿨다운(중복 방지)
+    if (Date.now() - qrCooldownRef.current < QR_COOLDOWN_MS) return;
+    qrCooldownRef.current = Date.now();
+
+    const patientName = patients.find((p) => p.id === pid)?.성명 ?? pid;
+
+    // ── Case 2: 준비 안 된 약품 존재 ─────────────────────────────────
+    const unready = injections
+      .filter((i) => i.status !== "confirmed")
+      .map((i) => ({
+        name: ((i.약품명 || i["약물명"]) as string) || i.id,
+        status: i.status ?? "pending",
+      }));
+
+    if (unready.length > 0) {
+      setQrResult({ type: "blocked_meds", patientName, unready });
+      return;
+    }
+
+    // ── Case 1: 모든 약품 준비 완료 → 처방 완료 기록 ─────────────────
+    qrConfirmingRef.current = true;
+    setQrConfirming(true);
+    try {
+      setQrResult({ type: "complete", patientName, injCount: injections.length });
+    } finally {
+      setQrConfirming(false);
+      qrConfirmingRef.current = false;
+    }
+  }, [camOn, pid, injections, patients]);
+
+  /* 인터벌 관리 (단일 스캔은 인터벌 없음, QR 모드는 300ms) */
   useEffect(() => {
-    if (ocrMode === "realtime" && camOn) {
-      captureAndOcr();
-      intervalRef.current = setInterval(() => captureAndOcr(), 2000);
+    if (ocrMode === "qr" && camOn) {
+      intervalRef.current = setInterval(scanQr, 300);
     } else {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
     }
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
     };
-  }, [ocrMode, camOn, captureAndOcr]);
+  }, [ocrMode, camOn, scanQr]);
 
   /* 단일 스캔 (버튼) */
   async function handleScan() {
@@ -195,18 +263,18 @@ export default function OcrPage() {
             {/* OCR 모드 토글 */}
             <div className="flex rounded-xl border border-line overflow-hidden text-xs font-semibold mb-3">
               <button
-                onClick={() => setOcrMode("single")}
+                onClick={() => { setOcrMode("single"); setQrRaw(null); setQrResult(null); }}
                 className={`flex-1 py-2 transition-colors ${
                   ocrMode === "single" ? "bg-teal text-white" : "text-ink-2 hover:bg-surface-2"
                 }`}>
                 단일 스캔
               </button>
               <button
-                onClick={() => setOcrMode("realtime")}
+                onClick={() => { setOcrMode("qr"); setOcrText(""); setResult(null); }}
                 className={`flex-1 py-2 transition-colors ${
-                  ocrMode === "realtime" ? "bg-teal text-white" : "text-ink-2 hover:bg-surface-2"
+                  ocrMode === "qr" ? "bg-teal text-white" : "text-ink-2 hover:bg-surface-2"
                 }`}>
-                실시간 OCR
+                QR 환자 확인
               </button>
             </div>
 
@@ -242,14 +310,96 @@ export default function OcrPage() {
               </button>
             )}
 
-            {/* 실시간 OCR 상태 표시 */}
-            {camOn && ocrMode === "realtime" && (
-              <div className="mt-3 flex items-center gap-2 rounded-xl border border-teal/30 bg-teal-soft px-4 py-2.5 text-sm">
-                {scanning
-                  ? <><Spinner /><span className="text-teal font-semibold">인식 중…</span></>
-                  : <><span className="text-teal animate-pulse">●</span><span className="text-teal font-semibold">실시간 OCR 활성</span></>
-                }
-                <span className="text-ink-3 text-xs ml-auto">2초 간격</span>
+            {/* QR 환자 확인 상태 표시 */}
+            {camOn && ocrMode === "qr" && (
+              <div className="mt-3 flex flex-col gap-2">
+                {/* 대기 상태 바 */}
+                {!qrResult && (
+                  <div className="flex items-center gap-2 rounded-xl border border-teal/30 bg-teal-soft px-4 py-2.5 text-sm">
+                    <span className="text-teal animate-pulse">●</span>
+                    <span className="text-teal font-semibold">QR 스캔 대기 중</span>
+                    <span className="text-ink-3 text-xs ml-auto">환자 QR을 비춰주세요</span>
+                  </div>
+                )}
+
+                {/* 감지된 QR 원본 */}
+                {qrRaw && (
+                  <div className="rounded-xl border border-line bg-surface-2 px-3 py-2 text-xs font-mono">
+                    <span className="text-ink-3">QR 감지: </span>
+                    <span className="text-teal font-semibold">{qrRaw}</span>
+                  </div>
+                )}
+
+                {/* Case 1 — 처방 완료 */}
+                {qrResult?.type === "complete" && (
+                  <div className="rounded-2xl p-4 border bg-green-soft border-green/30">
+                    <div className="flex items-center gap-3 mb-2">
+                      <MatchIcon />
+                      <p className="font-bold text-green text-base">처방 완료</p>
+                    </div>
+                    <p className="text-ink-2 text-sm leading-relaxed">
+                      {qrResult.patientName} 환자의 모든 약품({qrResult.injCount}종)이
+                      확인되었습니다. 안전하게 투약을 진행하세요.
+                    </p>
+                  </div>
+                )}
+
+                {/* Case 2 — 처방 불가 (미완료 약품) */}
+                {qrResult?.type === "blocked_meds" && (
+                  <div className="rounded-2xl p-4 border bg-red-soft border-red/30">
+                    <div className="flex items-center gap-3 mb-2">
+                      <MismatchIcon />
+                      <p className="font-bold text-red text-base">처방 불가</p>
+                    </div>
+                    <p className="text-ink-2 text-sm leading-relaxed">
+                      미확인 약품이 있어 투약이 불가합니다. OCR 검증을 먼저 완료하세요.
+                    </p>
+                    <ul className="mt-2 space-y-1">
+                      {qrResult.unready.map((u, i) => (
+                        <li key={i} className="flex items-center gap-2 text-xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red shrink-0" />
+                          <span className="font-semibold text-ink">{u.name}</span>
+                          <span className="text-ink-3">
+                            {u.status === "pending" ? "투약 대기중" :
+                             u.status === "mismatch" ? "약품 불일치" : u.status}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Case 3 — 처방 불가 (환자 정보 불일치) */}
+                {qrResult?.type === "blocked_patient" && (
+                  <div className="rounded-2xl p-4 border bg-red-soft border-red/30">
+                    <div className="flex items-center gap-3 mb-2">
+                      <MismatchIcon />
+                      <p className="font-bold text-red text-base">처방 불가 — 환자 정보 불일치</p>
+                    </div>
+                    <p className="text-ink-2 text-sm leading-relaxed">
+                      스캔된 QR이 선택된 환자와 다릅니다. 올바른 환자의 QR인지 확인하세요.
+                    </p>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-lg bg-surface px-3 py-2 border border-line">
+                        <p className="text-ink-3 mb-0.5">선택된 환자</p>
+                        <p className="font-semibold text-ink">{qrResult.selectedName}</p>
+                      </div>
+                      <div className="rounded-lg bg-surface px-3 py-2 border border-red/30">
+                        <p className="text-ink-3 mb-0.5">스캔된 QR</p>
+                        <p className="font-semibold text-red font-mono">{qrResult.scannedPid}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 다시 스캔 버튼 (결과가 있을 때) */}
+                {qrResult && (
+                  <button
+                    onClick={() => { setQrResult(null); setQrRaw(null); qrCooldownRef.current = 0; }}
+                    className="text-xs text-ink-3 hover:text-teal underline text-center mt-1 transition-colors">
+                    다시 스캔
+                  </button>
+                )}
               </div>
             )}
 
@@ -261,9 +411,6 @@ export default function OcrPage() {
             <h2 className="font-semibold text-ink mb-2 flex items-center gap-2">
               <TextIcon />
               OCR 결과
-              {ocrMode === "realtime" && camOn && (
-                <span className="ml-auto text-xs text-ink-3 font-normal">실시간 갱신 중</span>
-              )}
             </h2>
             <pre className="whitespace-pre-wrap text-ink text-sm min-h-[6rem] bg-surface-2 rounded-xl p-3 border border-line font-mono leading-relaxed">
               {ocrText || <span className="text-ink-3">스캔 후 텍스트가 표시됩니다.</span>}

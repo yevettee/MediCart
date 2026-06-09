@@ -180,3 +180,15 @@ export async function verifyInjection(
   if (!r.ok) throw new Error(`/api/patients/${pid}/injections/${inj_id}/verify → ${r.status}`);
   return r.json();
 }
+
+export async function confirmInjection(
+  pid: string,
+  inj_id: string,
+): Promise<{ ok: boolean; status: string }> {
+  const r = await fetch(`${API_BASE}/api/patients/${pid}/injections/${inj_id}/confirm`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!r.ok) throw new Error(`/api/patients/${pid}/injections/${inj_id}/confirm → ${r.status}`);
+  return r.json();
+}
