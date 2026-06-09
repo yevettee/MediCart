@@ -49,7 +49,7 @@ export default function ControlPage() {
     if (confirm && !window.confirm(`${ns.toUpperCase()} — "${label}" 하달할까요?`)) return;
     setSending(key);
     try {
-      const r = await pushMission(ns, action, mode);
+      const r = await pushMission(ns, action, undefined, mode);
       setToast(r.ok ? { ok: true, msg: `${ns.toUpperCase()} ← ${label} 하달됨` } : { ok: false, msg: r.error || "실패" });
       if (r.ok) refresh();
     } catch { setToast({ ok: false, msg: "전송 실패" }); }
