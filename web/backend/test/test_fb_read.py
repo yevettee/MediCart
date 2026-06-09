@@ -4,6 +4,7 @@
 """
 import pytest
 
+import fb_read
 from fb_read import (merge_snapshots, topics_to_snapshot, cmd_payload, valid_pid)
 
 
@@ -205,3 +206,18 @@ def test_intake_pending_payload_defaults():
     p = fb_read.intake_pending_payload({}, 1)
     assert p["name"] == "" and p["room"] == "" and p["sections"] == {}
     assert p["status"] == "pending"
+
+
+def test_intake_reset_updates_builds_false_map():
+    raw = {"P-2024-0001": {"info": {}}, "P-2024-0002": {"info": {}}}
+    upd = fb_read._intake_reset_updates(raw)
+    assert upd == {"P-2024-0001/intake_done": False, "P-2024-0002/intake_done": False}
+
+
+def test_intake_reset_updates_empty():
+    assert fb_read._intake_reset_updates(None) == {}
+    assert fb_read._intake_reset_updates({}) == {}
+
+
+def test_mark_intake_done_rejects_bad_pid():
+    assert fb_read.mark_intake_done("not-a-pid") is False

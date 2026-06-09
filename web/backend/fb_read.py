@@ -258,6 +258,86 @@ def telemetry_stream():
     return _drain(q)
 
 
+def _valid_ns(ns):
+    ns = str(ns or "").strip("/")
+    return ns if ns in SOURCES else PRIMARY_NS
+
+
+def logs(ns):
+    """{ns}/logs 최신순 리스트(amr_bridge 가 /rosout WARN+ 를 적재). 없으면 []."""
+    return _init().reference(f"{_valid_ns(ns)}/logs").get() or []
+
+
+def log_stream(ns):
+    """{ns}/logs 변경 → 전체 리스트(최신순)를 SSE push."""
+    db = _init()
+    src = _valid_ns(ns)
+    q = queue.Queue(maxsize=50)
+    ref = db.reference(f"{src}/logs")
+
+    def _on(event):
+        try:
+            q.put(json.dumps(ref.get() or [], separators=(",", ":")), block=False)
+        except queue.Full:
+            pass
+
+    ref.listen(_on)
+    return _drain(q)
+
+
+def clear_missions(ns):
+    """{ns}/mission_pool 을 통째로 비운다(관리자 '명령 초기화')."""
+    _init().reference(f"{_valid_ns(ns)}/mission_pool").delete()
+    return True
+
+
+def robots_health():
+    """각 로봇 {ns}/health(ping/create3/turtlebot4) 스냅샷 — amr_bridge 가 2s 갱신."""
+    db = _init()
+    return {s: (db.reference(f"{s}/health").get() or {}) for s in SOURCES}
+
+
+def camera_request(ns, on):
+    """{ns}/camera/request 에 패널 열림 하트비트 기록 — camera_bridge 송출 게이트."""
+    _init().reference(f"{_valid_ns(ns)}/camera/request").set(
+        {"on": bool(on), "ts": int(time.time() * 1000)})
+    return True
+
+
+def set_ocr_done(ns, done=True):
+    """{ns}/nurse_cart/ocr_done 설정 — 웹 OCR 완료 버튼 → 로봇측 nurse_cart 신호."""
+    _init().reference(f"{_valid_ns(ns)}/nurse_cart/ocr_done").set(bool(done))
+    return True
+
+
+def camera_stream(ns):
+    """{ns}/camera 변경 → 최신 프레임(rgb/depth base64) SSE push(최신만 유지)."""
+    db = _init()
+    src = _valid_ns(ns)
+    q = queue.Queue(maxsize=2)        # 프레임은 큼 — 최신 프레임만 유지
+    ref = db.reference(f"{src}/camera")
+
+    def _on(event):
+        snap = ref.get()
+        if not isinstance(snap, dict):
+            return
+        frame = {k: snap.get(k) for k in ("rgb", "depth", "ts", "w", "h", "src")}
+        if not frame.get("rgb") and not frame.get("depth"):
+            return
+        data = json.dumps(frame, separators=(",", ":"))
+        try:
+            q.put(data, block=False)
+        except queue.Full:
+            try:
+                q.get_nowait()
+                q.put(data, block=False)
+            except Exception:          # noqa: BLE001
+                pass
+
+    ref.listen(_on)
+    return _drain(q)
+
+
 def alert_stream():
     """{ns}/alerts push → 평탄 알림({source, ...alert})으로 push."""
     db = _init()
@@ -309,6 +389,29 @@ def get_intake(pid):
     db = _init()
     node = db.reference(f"patients/{pid}/intake").get()
     return (node or {}).get("data") if isinstance(node, dict) else None
+
+
+# ── 순회 문진 회차 플래그 (patients/{pid}/intake_done) ────────────────────────
+def _intake_reset_updates(raw):
+    """patients get() 결과 → {pid/intake_done: False} 멀티패스 업데이트 dict(순수)."""
+    return {f"{pid}/intake_done": False for pid in (raw or {}).keys()}
+
+
+def reset_intake_flags():
+    """순회 시작 — 전 환자 intake_done=False 일괄 리셋. 리셋된 환자 수 반환."""
+    ref = _init().reference("patients")
+    updates = _intake_reset_updates(ref.get() or {})
+    if updates:
+        ref.update(updates)
+    return len(updates)
+
+
+def mark_intake_done(pid):
+    """문진 완료 — 해당 환자 intake_done=True. 잘못된 pid면 False."""
+    if not valid_pid(pid):
+        return False
+    _init().reference(f"patients/{pid}/intake_done").set(True)
+    return True
 
 
 def intake_pending_payload(data, ts):
