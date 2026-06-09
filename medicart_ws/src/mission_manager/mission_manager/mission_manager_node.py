@@ -75,6 +75,8 @@ class MissionManagerNode(Node):
         # db_node 가 RTDB ocr_done 을 감지해 발행하는 topic 을 받아 시퀀서에 전달.
         self.create_subscription(
             String, f'/{ns}/nurse_cart/ocr_done', self._on_nurse_cart_ocr_done, 10)
+        self.create_subscription(
+            String, f'/{ns}/nurse_cart/round_done', self._on_nurse_cart_round_done, 10)
         self._cmd_pub = self.create_publisher(Twist, f'/{ns}/cmd_vel', 10)
         self._robot_mode_pub = self.create_publisher(String, f'/{ns}/robot_mode', 10)
         self.create_subscription(LaserScan, f'/{ns}/scan', self._on_scan, 10)
@@ -115,6 +117,10 @@ class MissionManagerNode(Node):
     def _on_nurse_cart_ocr_done(self, _msg):
         """db_node 경유 OCR 완료 신호 → nurse_cart 시퀀서 WAIT_OCR 해제."""
         self._nurse_cart.signal_ocr_done()
+
+    def _on_nurse_cart_round_done(self, _msg):
+        """db_node 경유 회진 완료 신호 → nurse_cart 시퀀서 WAIT_ROUND_DONE 해제 → 홈 복귀."""
+        self._nurse_cart.signal_round_done()
 
     def _handle_goto(self, req):
         """goto 좌표 이동: arbiter 'goto'(nav) 점거 → NavExecutor 실행 → 종료 시 해제·보고."""

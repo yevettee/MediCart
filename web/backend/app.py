@@ -254,6 +254,34 @@ def nurse_cart_phase():
     return jsonify({"phase": fb_read.get_nurse_cart_phase()})
 
 
+@app.post("/api/nurse_cart/ocr_done")
+def nurse_cart_ocr_done():
+    """OCR 완료 신호 전송 — staff 이상 필요. /ocr 페이지 완료 버튼에서 호출.
+
+    RTDB robot6/nurse_cart/ocr_done=true 를 기록하면 db_node 가 감지해
+    nurse_cart_sequencer 를 WAIT_OCR → GOTO_STANDBY 로 전이시킨다.
+    """
+    try:
+        fb_read.set_ocr_done()
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True})
+
+
+@app.post("/api/nurse_cart/round_done")
+def nurse_cart_round_done():
+    """회진 완료 신호 전송 — staff 이상 필요. 회진 종료 버튼에서 호출.
+
+    RTDB robot6/nurse_cart/round_done=true 를 기록하면 db_node 가 감지해
+    nurse_cart_sequencer 를 WAIT_ROUND_DONE → GOTO_HOME → DOCK 으로 전이시킨다.
+    """
+    try:
+        fb_read.set_round_done()
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True})
+
+
 @app.post("/api/display/current")
 def display_set():
     body = request.get_json(force=True, silent=True) or {}

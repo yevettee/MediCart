@@ -68,6 +68,11 @@ class DbNode(Node):
             String, f'/{self.ns}/nurse_cart/ocr_done', 10)
         self._fb.listen(f'{self.ns}/nurse_cart/ocr_done', self._on_rtdb_ocr_done)
 
+        # 간호사 카트 회진 완료 신호 — RTDB {ns}/nurse_cart/round_done → ROS topic
+        self._round_done_pub = self.create_publisher(
+            String, f'/{self.ns}/nurse_cart/round_done', 10)
+        self._fb.listen(f'{self.ns}/nurse_cart/round_done', self._on_rtdb_round_done)
+
         self._timer = self.create_timer(period, self._tick)
         self.get_logger().info(
             f'[db_node] 준비 완료 — mission_pool=/{self._pool_path} 대기 중, '
@@ -85,6 +90,18 @@ class DbNode(Node):
             self._fb.write(f'{self.ns}/nurse_cart/ocr_done', False)
         except Exception as exc:               # noqa: BLE001
             self.get_logger().warn(f'[db_node] ocr_done RTDB 초기화 실패: {exc}')
+
+    def _on_rtdb_round_done(self, event):
+        """RTDB {ns}/nurse_cart/round_done 값이 true 로 바뀌면 ROS topic 발행 + 즉시 초기화."""
+        data = getattr(event, 'data', None)
+        if data not in (True, 'true', 1):
+            return
+        self.get_logger().info('[db_node] nurse_cart 회진 완료 신호 감지 → ROS topic 발행')
+        self._publish(self._round_done_pub, {'round_done': True, 'ts': _now_ms()})
+        try:
+            self._fb.write(f'{self.ns}/nurse_cart/round_done', False)
+        except Exception as exc:               # noqa: BLE001
+            self.get_logger().warn(f'[db_node] round_done RTDB 초기화 실패: {exc}')
 
     # ── RTDB 동기화 ──────────────────────────────────────────────────────
     def _refresh_pool(self, reason):

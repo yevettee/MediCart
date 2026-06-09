@@ -468,6 +468,24 @@ def get_nurse_cart_phase(ns: str = "robot6") -> str:
     return str(val) if val else "idle"
 
 
+def set_ocr_done(ns: str = "robot6"):
+    """OCR 완료 신호 — RTDB /{ns}/nurse_cart/ocr_done=true 기록.
+
+    db_node 가 이 값을 감지해 ROS topic /{ns}/nurse_cart/ocr_done 을 발행하고,
+    nurse_cart_sequencer 가 WAIT_OCR → GOTO_STANDBY 로 전이한다.
+    """
+    _init().reference(f"{ns}/nurse_cart/ocr_done").set(True)
+
+
+def set_round_done(ns: str = "robot6"):
+    """회진 완료 신호 — RTDB /{ns}/nurse_cart/round_done=true 기록.
+
+    db_node 가 이 값을 감지해 ROS topic /{ns}/nurse_cart/round_done 을 발행하고,
+    nurse_cart_sequencer 가 WAIT_ROUND_DONE → GOTO_HOME → DOCK 으로 전이한다.
+    """
+    _init().reference(f"{ns}/nurse_cart/round_done").set(True)
+
+
 def set_display_patient(pid: str):
     """QR 스캔 후 병실 디스플레이에 표시할 환자 ID를 Firebase에 기록."""
     db = _init()

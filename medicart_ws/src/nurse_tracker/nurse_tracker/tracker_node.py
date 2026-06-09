@@ -47,15 +47,19 @@ class TrackerNode(Node):
         target_class = str(self.get_parameter("target_class").value).strip().lower()
         desired_distance = float(self.get_parameter("desired_distance").value)
 
+        hz = float(self.get_parameter("control_hz").value)
         self._perc = PersonTracker(
             self, ns,
             model_path=str(self.get_parameter("model_path").value),
             target_classes=(target_class,),
-            conf=float(self.get_parameter("conf").value))
+            conf=float(self.get_parameter("conf").value),
+            infer_hz=hz)           # YOLO 추론을 control_hz에 맞춰 rate-limit
         self._fsm = FollowFSM(
             FollowParams(desired_distance=desired_distance),
             lost_timeout=float(self.get_parameter("lost_timeout").value))
         self._active = False
+        self._smooth_lin = 0.0   # EMA 스무딩 상태
+        self._smooth_ang = 0.0
 
         self._cmd_pub = self.create_publisher(Twist, f"/{ns}/mode/{MODE}/cmd_vel", 10)
         self._status_pub = self.create_publisher(String, f"/{ns}/mode/{MODE}/status", 10)
@@ -64,7 +68,6 @@ class TrackerNode(Node):
         self.create_subscription(String, f"/{ns}/mode/{MODE}/set", self._on_set, _LATCHED_QOS)
         self.create_service(Trigger, f"/{ns}/start_tracking", self._on_start_tracking)
 
-        hz = float(self.get_parameter("control_hz").value)
         self.create_timer(1.0 / hz, self._tick)
         self.get_logger().info(
             f"[tracker_node] round 모드 준비 ns={ns} target={target_class} "
@@ -77,8 +80,14 @@ class TrackerNode(Node):
             return
         active = bool(d.get("active"))
         if active and not self._active:
-            self._fsm.reset()                   # 활성화 시 손실타이머 초기화(재-ACQUIRE)
+            self._fsm.reset()
+            self._smooth_lin = 0.0              # 활성화 시 스무딩 초기값 리셋
+            self._smooth_ang = 0.0
+        if not active:
+            self._smooth_lin = 0.0
+            self._smooth_ang = 0.0
         self._active = active
+        self._perc.set_active(active)
         self.get_logger().info(f"[tracker_node] active={active}")
 
     def _on_start_tracking(self, request, response):
@@ -94,7 +103,9 @@ class TrackerNode(Node):
         now = time.monotonic()
         target = self._perc.target
         lin, ang, detail = self._fsm.step(target, now)
-        tw = Twist(); tw.linear.x = float(lin); tw.angular.z = float(ang)
+        # 선속도 EMA 스무딩(α=0.3): 급출발·급정지 완화. 각속도는 즉각 반응이 자연스러움.
+        self._smooth_lin = 0.3 * lin + 0.7 * self._smooth_lin
+        tw = Twist(); tw.linear.x = float(self._smooth_lin); tw.angular.z = float(ang)
         self._cmd_pub.publish(tw)
         s = String(); s.data = json.dumps(
             {"state": "running", "detail": detail, "ts": int(time.time() * 1000)})
@@ -103,7 +114,8 @@ class TrackerNode(Node):
             tb = String()
             tb.data = json.dumps({"tracking_id": int(target.track_id),
                                   "distance": round(float(target.distance), 3),
-                                  "error_x": round(float(target.error_x), 4),
+                                  "x_robot":  round(float(target.x_robot), 3),
+                                  "y_robot":  round(float(target.y_robot), 3),
                                   "ts": int(time.time() * 1000)})
             self._target_pub.publish(tb)
 
