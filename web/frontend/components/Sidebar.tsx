@@ -1,11 +1,13 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { getMe, logout } from "@/lib/api";
+import { NAV_ROLES, roleAtLeast, ROLE_LABEL, landingFor, type Role } from "@/lib/auth";
 
 const NAV = [
   { href: "/", label: "홈", sub: "메뉴", icon: HomeIcon, exact: true },
-  { href: "/map", label: "실시간 관제", sub: "AMR 위치·모드", icon: MapIcon },
-  { href: "/control", label: "로봇 제어", sub: "명령 하달", icon: ControlIcon },
+  { href: "/console", label: "관리자 콘솔", sub: "관제·제어·디버그", icon: MapIcon },
   { href: "/patients", label: "환자 정보", sub: "회진 보조", icon: PatientIcon },
   { href: "/intake", label: "문진표", sub: "작성·저장", icon: FormIcon },
   { href: "/ocr", label: "처치실", sub: "투약 준비·검증", icon: FormIcon },
@@ -20,6 +22,9 @@ export default function Sidebar({
   onCloseMobile: () => void; onToggleCollapse: () => void;
 }) {
   const path = usePathname();
+  const [role, setRole] = useState<Role>("patient");
+  useEffect(() => { getMe().then((m) => setRole(m.role)).catch(() => setRole("patient")); }, [path]);
+  const visibleNav = NAV.filter(({ href }) => roleAtLeast(role, NAV_ROLES[href] ?? "admin"));
   return (
     <aside
       className={[
@@ -56,7 +61,7 @@ export default function Sidebar({
 
       {/* 네비 */}
       <nav className="flex-1 px-2.5 py-4 flex flex-col gap-1 overflow-y-auto">
-        {NAV.map(({ href, label, sub, icon: Icon, exact }) => {
+        {visibleNav.map(({ href, label, sub, icon: Icon, exact }) => {
           const active = exact ? path === href : path === href || path.startsWith(href + "/");
           return (
             <Link key={href} href={href} onClick={onCloseMobile} title={collapsed ? label : undefined}
@@ -79,14 +84,29 @@ export default function Sidebar({
         })}
       </nav>
 
-      {!collapsed && (
-        <div className="px-5 py-4 border-t border-line">
-          <div className="flex items-center gap-2 text-[11.5px] text-ink-3">
-            <span className="dot bg-green live-dot" />
-            <span>PC3 웹 관제 · Redis 연결</span>
-          </div>
+      <div className="px-3 py-3 border-t border-line">
+        <div className={`flex items-center gap-2 ${collapsed ? "md:justify-center" : ""}`}>
+          <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+            role === "admin" ? "bg-red" : role === "staff" ? "bg-teal" : "bg-ink-3"}`} />
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <div className="text-[12.5px] font-bold text-ink leading-tight">{ROLE_LABEL[role]}</div>
+              <div className="text-[10.5px] text-ink-3 truncate">
+                {role === "patient" ? "비로그인" : "로그인됨"}
+              </div>
+            </div>
+          )}
+          {!collapsed && (
+            role === "patient" ? (
+              <a href={`/login?next=${encodeURIComponent(path)}`}
+                className="text-[11.5px] font-semibold text-teal-600 bg-teal-soft border border-teal/30 rounded-lg px-2.5 py-1 hover:border-teal">로그인</a>
+            ) : (
+              <button onClick={async () => { await logout(); setRole("patient"); window.location.href = landingFor("patient"); }}
+                className="text-[11.5px] font-semibold text-ink-2 bg-surface-2 border border-line rounded-lg px-2.5 py-1 hover:border-ink-3">로그아웃</button>
+            )
+          )}
         </div>
-      )}
+      </div>
     </aside>
   );
 }
@@ -107,10 +127,6 @@ function HomeIcon() {
 function MapIcon() {
   return (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round">
     <path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z" /><path d="M9 4v14M15 6v14" /></svg>);
-}
-function ControlIcon() {
-  return (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="8" /><path d="M12 8v4l2.5 2.5" /></svg>);
 }
 function PatientIcon() {
   return (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

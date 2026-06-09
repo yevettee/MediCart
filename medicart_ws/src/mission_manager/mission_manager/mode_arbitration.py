@@ -5,8 +5,9 @@
 """
 from dataclasses import dataclass
 
-# 높을수록 선점: mapping > 문진 > 회진 > 지시 > 가이드 > 순찰 > idle
+# 높을수록 선점: goto(운영자) > mapping > 문진 > 회진 > 지시 > 가이드 > 순찰 > idle
 MODE_PRIORITY = {
+    "goto": 7,
     "mapping": 6, "intake": 5, "round": 4,
     "errand": 3, "guide": 2, "patrol": 1, "idle": 0,
 }

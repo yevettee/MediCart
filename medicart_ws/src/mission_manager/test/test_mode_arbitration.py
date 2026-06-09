@@ -40,3 +40,9 @@ def test_safety_gate_allows_clear_and_reverse():
 def test_safety_gate_depth_block():
     lin, _, blocked = safety_gate(0.2, 0.0, None, 0.15)    # depth 0.15<0.20
     assert blocked and lin == 0.0
+
+
+def test_goto_preempts_all_autonomous_modes():
+    from mission_manager.mode_arbitration import arbitrate, MODE_PRIORITY
+    assert MODE_PRIORITY["goto"] > MODE_PRIORITY["mapping"]
+    assert arbitrate({"patrol", "round", "mapping", "goto"}) == "goto"

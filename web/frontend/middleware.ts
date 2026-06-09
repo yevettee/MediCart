@@ -1,19 +1,27 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { roleForToken, requiredRoleForRoute, roleAtLeast, landingFor } from "@/lib/auth";
 
-// Flask가 발급하는 쿠키와 동일 토큰. systemd 환경변수 INTEL_AUTH_TOKEN로 양쪽 동기화.
-// env 필수 — 소스에 기본 토큰 하드코딩하지 않는다. 미설정이면 모두 차단(fail-closed).
-const TOKEN = process.env.INTEL_AUTH_TOKEN;
+// systemd/기동 env 로 양쪽(Flask·Next)이 동일 토큰 공유. 미설정 시 admin 토큰을 모름 → fail-closed.
+const STAFF = process.env.INTEL_AUTH_TOKEN;
+const ADMIN = process.env.INTEL_ADMIN_TOKEN;
 
 export function middleware(req: NextRequest) {
-  if (TOKEN && req.cookies.get("intel_auth")?.value === TOKEN) return NextResponse.next();
+  const role = roleForToken(req.cookies.get("intel_auth")?.value, STAFF, ADMIN);
+  const need = requiredRoleForRoute(req.nextUrl.pathname);
+  if (roleAtLeast(role, need)) return NextResponse.next();
+
   const url = req.nextUrl.clone();
-  url.pathname = "/login";
-  url.searchParams.set("next", req.nextUrl.pathname);
+  if (role === "patient") {
+    url.pathname = "/login";
+    url.searchParams.set("next", req.nextUrl.pathname);
+  } else {
+    url.pathname = landingFor(role); // 의료진이 관리자 라우트 접근 → 자기 랜딩으로
+    url.search = "";
+  }
   return NextResponse.redirect(url);
 }
 
-// /login·정적파일(_next, 확장자 있는 파일)·favicon 제외한 모든 페이지 보호.
 export const config = {
   matcher: ["/((?!login|api/|_next/static|_next/image|favicon.ico|.*\\.).*)"],
 };
