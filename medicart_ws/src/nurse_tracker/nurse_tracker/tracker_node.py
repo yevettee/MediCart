@@ -27,9 +27,9 @@ from .follow_control import FollowParams, FollowFSM
 
 MODE = "round"
 
-# 학습된 nurse/obstacle 모델(yolo11s 파인튜닝, models/best.pt) — 패키지 share 설치 경로.
+# 학습된 nurse/obstacle 모델(yolo11n 파인튜닝, models/yolo11n.pt) — 패키지 share 설치 경로.
 _DEFAULT_MODEL_PATH = os.path.join(
-    get_package_share_directory("nurse_tracker"), "models", "best.pt")
+    get_package_share_directory("nurse_tracker"), "models", "yolo11n.pt")
 
 
 class TrackerNode(Node):
