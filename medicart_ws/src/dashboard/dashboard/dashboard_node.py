@@ -50,38 +50,46 @@ from sensor_msgs.msg import CompressedImage
 DEFAULT_TARGETS = (
     {
         'name': '101호 1번',
-        'x': -12.0,
-        'y': -5.0,
-        'yaw': -0.00143,
+        'x': -4.39228,
+        'y': -0.701007,
+        'yaw': 2.47368,
         'color': '#0f8b7b',
     },
     {
         'name': '101호 2번',
-        'x': -12.0,
-        'y': -6.0,
-        'yaw': -0.00143,
+        'x': -4.21788,
+        'y': -1.58667,
+        'yaw': -2.63024,
         'color': '#3f6fb5',
     },
     {
         'name': '102호 호출',
-        'x': -13.0,
-        'y': -8.0,
-        'yaw': -0.00143,
+        'x': -3.94329,
+        'y': -3.34683,
+        'yaw': -3.1113,
         'color': '#d35f35',
     },
     {
         'name': '약품실',
-        'x': -9.0,
-        'y': -9.0,
-        'yaw': -0.00143,
+        'x': -0.302782,
+        'y': -3.3757,
+        'yaw': -0.0545105,
         'color': '#c18b1c',
     },
     {
         'name': 'Docking Station',
-        'x': -8.0,
-        'y': -6.0,
-        'yaw': -0.00142,
+        'x': -0.354229,
+        'y': -0.118972,
+        'yaw': -0.0042011,
         'color': '#6f4bb5',
+        'dock_after': True,
+    },
+    {
+        'name': 'Docking Station 3',
+        'x': -0.350975,
+        'y': -1.10605,
+        'yaw': 0.00228335,
+        'color': '#8b5fbf',
         'dock_after': True,
     },
 )
@@ -802,6 +810,7 @@ class DashboardNode(Node):
         with self._state_lock:
             is_docked = self._is_docked
             goal_state = self._goal_state
+            last_goal = self._last_goal
 
         if goal_state in (
             'undocking',
@@ -821,8 +830,12 @@ class DashboardNode(Node):
             data=self._target_to_dict(target),
         )
 
-        if target.dock_after and is_docked is True:
-            self._publish_log('이미 도킹 상태입니다.', level='success')
+        if (
+            target.dock_after
+            and is_docked is True
+            and self._is_same_dock_target(target, last_goal)
+        ):
+            self._publish_log(f'이미 {target.name} 도킹 상태입니다.', level='success')
             with self._state_lock:
                 self._goal_state = 'docked'
                 self._last_goal = target
@@ -831,8 +844,10 @@ class DashboardNode(Node):
         auto_undock = bool(self.get_parameter('auto_undock').value)
         should_undock = (
             auto_undock
-            and not target.dock_after
-            and is_docked is not False
+            and (
+                is_docked is True
+                or (not target.dock_after and is_docked is None)
+            )
         )
         if should_undock:
             self._send_undock_then_navigation(
@@ -1337,6 +1352,19 @@ class DashboardNode(Node):
             yaw=yaw,
             name=name,
             dock_after=dock_after,
+        )
+
+    @staticmethod
+    def _is_same_dock_target(
+        target: NavigationTarget,
+        last_goal: NavigationTarget | None,
+    ) -> bool:
+        if last_goal is None:
+            return False
+        return (
+            target.dock_after
+            and last_goal.dock_after
+            and target.name == last_goal.name
         )
 
     def _target_to_dict(
