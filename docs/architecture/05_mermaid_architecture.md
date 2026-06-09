@@ -86,3 +86,89 @@ graph TB
   OPC <-->|"FastDDS (sensor·TF·cmd_vel)"| TB4
   WPC <-->|"Firebase RTDB"| OPC
 ```
+
+## 3. ROS 노드 그래프 (토픽/서비스/액션 — name + type + 값)
+
+### 3.1 미션 오케스트레이션 — db_node ↔ mission_manager
+
+```mermaid
+graph LR
+  POOL[("RTDB robot6/mission_pool")] -->|"listen"| DB["db_node"]
+  DB -->|"status/progress write"| POOL
+  DB -->|"/robot6/mission_request<br/>std_msgs/String {id,action,params,mode}"| MM["mission_manager_node"]
+  DB -->|"/robot6/mission_cancel<br/>std_msgs/String {id,reason} (선점)"| MM
+  MM -->|"/robot6/mission_feedback<br/>std_msgs/String {id,status,detail,ts}"| DB
+  MM -->|"/robot6/robot_mode<br/>std_msgs/String"| MON["모니터/웹"]
+  MM -->|"/robot6/cmd_vel<br/>geometry_msgs/Twist (단독소유)"| C3["Create3 base"]
+  SCAN["RPLIDAR"] -->|"/robot6/scan<br/>sensor_msgs/LaserScan"| MM
+  DS["Create3"] -->|"/robot6/dock_status<br/>irobot_create_msgs/DockStatus"| MM
+  MM -. "내부" .-> ARB["mode_arbiter"]
+  MM -. "내부" .-> NEX["nav_executor"]
+  MM -. "내부" .-> MEX["mission_executor"]
+  MM -. "내부" .-> SEQ["MissionSequencer (patrol_mission)"]
+  NEX -->|"/robot6/navigate_to_pose<br/>nav2_msgs/NavigateToPose · frame_id='map'"| NAV2["Nav2 bt_navigator"]
+  NEX -->|"/robot6/dock · /robot6/undock<br/>irobot_create_msgs/action/Dock·Undock"| C3
+  MEX -->|"subprocess: ros2 action send_goal / ssh"| C3
+```
+
+### 3.2 모드 중재 — mode_arbiter (REACTIVE 계약)
+
+```mermaid
+graph LR
+  ARB["mode_arbiter<br/>(mission_manager 내부)"] -->|"/robot6/mode/{mode}/set<br/>std_msgs/String (latched) {active,params}"| M["mode node (예: round)"]
+  M -->|"/robot6/mode/{mode}/cmd_vel<br/>geometry_msgs/Twist"| ARB
+  M -->|"/robot6/mode/{mode}/status<br/>std_msgs/String {state}"| ARB
+  OB["obstacle_node"] -->|"/obstacle_detector/ground_status<br/>std_msgs/String"| ARB
+  ARB -->|"우선순위 선택 + safety_gate (lidar 0.30m / depth 0.20m)"| OUT["/robot6/cmd_vel<br/>geometry_msgs/Twist"]
+```
+
+### 3.3 시나리오 A 인지 — identifier_node + db_bridge
+
+```mermaid
+graph LR
+  OAK["OAK-D"] -->|"/robot6/oakd/rgb/image_raw<br/>sensor_msgs/Image"| ID["identifier_node<br/>(YOLO + QR + 병실검증)"]
+  PAT["patrol_mode_node"] -->|"/robot6/identify/start<br/>std_msgs/String"| ID
+  ID -->|"/robot6/patient_identified<br/>medi_interfaces/PatientIdentified"| PAT
+  ID -->|"/robot6/patient_identified"| DBR["display_bridge → RTDB display/current_patient"]
+  ID -->|"/robot6/db/get_prescription<br/>medi_interfaces/GetPrescription"| PS["prescription_server"]
+  PS -->|"PatientInfo + MedicineInfo[]"| ID
+  PS <-->|"RTDB patients/rooms"| RTDB[("Firebase RTDB")]
+  PAT -->|"/robot6/db/list_rooms<br/>medi_interfaces/ListRooms"| RS["rooms_server"]
+  RS -->|"room_ids/xs/ys/yaws"| PAT
+  PAT -->|"/robot6/navigate_to_pose<br/>nav2_msgs/NavigateToPose"| NAV2["Nav2"]
+```
+
+### 3.4 시나리오 B 추종 — nurse_tracker (round)
+
+```mermaid
+graph LR
+  OAK["OAK-D"] -->|"/robot6/oakd/rgb/image_raw/compressed<br/>sensor_msgs/CompressedImage"| TR["tracker_node<br/>(YOLO11s best.pt + ByteTrack)"]
+  OAK -->|"/robot6/oakd/stereo/image_raw/compressedDepth<br/>sensor_msgs/CompressedImage"| TR
+  CALL["mission_manager / 웹"] -->|"/robot6/start_tracking<br/>std_srvs/Trigger"| TR
+  TR -->|"/robot6/mode/round/cmd_vel<br/>geometry_msgs/Twist"| ARB["mode_arbiter"]
+  TR -->|"/robot6/mode/round/status<br/>std_msgs/String"| ARB
+  TR -->|"/nurse_tracker/target<br/>std_msgs/String · /nurse_tracker/annotated_image<br/>sensor_msgs/Image"| VIS["시각화/디버그"]
+  ARB -. "/robot6/mode/round/set" .-> TR
+```
+
+### 3.5 장애물 안전 — obstacle_detector
+
+```mermaid
+graph LR
+  OAK["OAK-D stereo"] -->|"/robot6/oakd/stereo/image_raw/compressedDepth<br/>sensor_msgs/CompressedImage"| OB["obstacle_node<br/>(depth→지면 평면 SVD)"]
+  OAK -->|"/robot6/oakd/stereo/camera_info<br/>sensor_msgs/CameraInfo"| OB
+  OB -->|"/obstacle_detector/ground_cloud<br/>sensor_msgs/PointCloud2"| RV["RViz/디버그"]
+  OB -->|"/obstacle_detector/ground_status<br/>std_msgs/String"| MM["mission_manager safety_gate"]
+```
+
+### 3.6 자율주행 · 하드웨어
+
+```mermaid
+graph LR
+  RP["RPLIDAR"] -->|"/robot6/scan<br/>sensor_msgs/LaserScan"| AMCL["AMCL (loc)"]
+  RP --> NAV2["Nav2"]
+  MAP["map_server"] -->|"/robot6/map<br/>nav_msgs/OccupancyGrid"| NAV2
+  AMCL -->|"map→odom TF · /robot6/amcl_pose<br/>geometry_msgs/PoseWithCovarianceStamped"| NAV2
+  C3["Create3"] -->|"/robot6/odom · /robot6/battery_state · /robot6/dock_status<br/>nav_msgs/Odometry · sensor_msgs/BatteryState · irobot_create_msgs/DockStatus"| SUB["telemetry→RTDB→웹"]
+  OAK["OAK-D"] -->|"/robot6/oakd/rgb/* · /robot6/oakd/stereo/*"| PERC["인지 노드들"]
+```
