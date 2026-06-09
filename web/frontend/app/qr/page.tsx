@@ -16,6 +16,7 @@ export default function QrPage() {
   const [lastPatient, setLastPatient] = useState<Patient | null>(null);
   const [sending, setSending] = useState(false);
   const [sendErr, setSendErr] = useState("");
+  const [notFound, setNotFound] = useState("");       // DB 미등록 환자 ID(알림용)
   const [rawQr, setRawQr] = useState<string | null>(null); // 디버그: 읽힌 원본 QR 값
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -86,13 +87,21 @@ export default function QrPage() {
     // API 전송은 별도 플래그로 중복 방지
     if (scanningRef.current) return;
     scanningRef.current = true;
-    setSending(true); setSendErr("");
+    setSending(true); setSendErr(""); setNotFound("");
 
     try {
-      await setDisplayPatient(raw);
-      setLastPid(raw);
+      // 1) DB 등록 환자인지 먼저 확인 — 미등록이면 문진표로 넘기지 않는다.
       const p = await getPatient(raw).catch(() => null);
+      if (!p) {
+        setNotFound(raw);
+        cooldownRef.current = 0;          // 재스캔 허용(같은 QR 다시 시도 가능)
+        return;
+      }
+      // 2) 등록 환자 → 디스플레이 반영 후 이 화면에서 바로 문진표로 이동.
+      setLastPid(raw);
       setLastPatient(p);
+      await setDisplayPatient(raw);
+      window.location.href = `/intake?pid=${raw}`;   // 카트 iPad 단일 화면 흐름
     } catch (e) {
       setSendErr(String(e));
     } finally {
@@ -158,6 +167,14 @@ export default function QrPage() {
           </div>
         )}
         {sendErr && <p className="text-red text-xs">{sendErr}</p>}
+
+        {/* DB 미등록 환자 — 문진표로 넘어가지 않음 */}
+        {notFound && (
+          <div className="rounded-xl border border-red/30 bg-red-soft px-4 py-3 text-sm">
+            <p className="text-red font-semibold">❌ 등록되지 않은 환자입니다</p>
+            <p className="text-ink-3 text-xs font-mono mt-0.5">{notFound}</p>
+          </div>
+        )}
 
         {/* 읽힌 QR 원본 표시 */}
         {rawQr && (
