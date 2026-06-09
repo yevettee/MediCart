@@ -15,6 +15,7 @@ def patient_node_to_api(pid, node):
     out["visits"] = node.get("visits") or []
     intake = node.get("intake")
     out["intake"] = (intake or {}).get("data") if isinstance(intake, dict) else None
+    out["intake_done"] = bool(node.get("intake_done"))
     return out
 
 
