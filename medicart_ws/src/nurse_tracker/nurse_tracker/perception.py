@@ -64,10 +64,12 @@ class PersonTracker:
 
     def __init__(self, node, ns, model_path="ward_model.pt", target_classes=("nurse",),
                  conf=0.5, sync_slop=0.05, near_percentile=0.30,
-                 rgb_topic=None, depth_topic=None):
+                 infer_hz=10.0, rgb_topic=None, depth_topic=None,
+                 base_frame="base_link"):
         self._node = node
         self._log = node.get_logger()
         self._target_classes = set(target_classes)
+        self._base_frame = str(base_frame or "base_link")
         self._near_pct = float(near_percentile)
         self._yolo = YoloHelper(model_path, conf=conf, logger=self._log)
 
@@ -88,6 +90,52 @@ class PersonTracker:
         self._sync.registerCallback(self._on_synced)
         self._log.info(f"[perception] target={self._target_classes} (RGB-D 동기화)")
 
+    # ── 카메라 내부 파라미터 ─────────────────────────────────────────────
+    def _on_camera_info(self, msg: CameraInfo):
+        if self._fx is not None:
+            return
+        k = msg.k
+        self._fx, self._fy = k[0], k[4]
+        self._cx, self._cy = k[2], k[5]
+        self._camera_frame = msg.header.frame_id
+        self._log.info(
+            f"[perception] camera_info 수신: fx={self._fx:.1f} fy={self._fy:.1f} "
+            f"cx={self._cx:.1f} cy={self._cy:.1f} frame={self._camera_frame}")
+
+    # ── depth → base_link 좌표 변환 ──────────────────────────────────────
+    def _to_robot_frame(self, u: float, v: float, depth_m: float):
+        """픽셀 (u, v) + depth → base_link 프레임 (x, y) m.
+
+        TF 실패 시 카메라 광학 프레임 기준 근사값으로 폴백:
+          카메라 광학(z=전방, x=우, y=하) → base_link(x=전방, y=좌)
+          x_base ≈ z_cam = depth_m
+          y_base ≈ -x_cam = -(u - cx) * depth / fx
+        """
+        if self._fx is None:
+            # camera_info 미수신 — 픽셀 기반 근사
+            return depth_m, 0.0
+
+        x_cam = (u - self._cx) * depth_m / self._fx
+        y_cam = (v - self._cy) * depth_m / self._fy
+        z_cam = depth_m
+
+        if self._camera_frame is not None:
+            pt = PointStamped()
+            pt.header.frame_id = self._camera_frame
+            pt.header.stamp    = rclpy.time.Time().to_msg()  # 최신 TF 사용
+            pt.point.x, pt.point.y, pt.point.z = float(x_cam), float(y_cam), float(z_cam)
+            try:
+                pt_base = self._tf_buffer.transform(
+                    pt, self._base_frame,
+                    timeout=rclpy.duration.Duration(seconds=0.05))
+                return pt_base.point.x, pt_base.point.y
+            except Exception:
+                pass  # TF 미준비 → 폴백
+
+        # 폴백: 카메라 광학 프레임 근사 (수평 장착 가정)
+        return z_cam, -x_cam
+
+    # ── depth 처리 ───────────────────────────────────────────────────────
     def _decode_depth(self, depth_msg):
         try:
             png = np.frombuffer(bytes(depth_msg.data)[_CDEPTH_HEADER_BYTES:], np.uint8)

@@ -1,0 +1,304 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1180" viewBox="0 0 1800 1180">
+  <defs>
+    <marker id="arrow-topic" markerWidth="12" markerHeight="8" refX="11" refY="4" orient="auto">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#15803d"/>
+    </marker>
+    <marker id="arrow-service" markerWidth="12" markerHeight="8" refX="11" refY="4" orient="auto">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#1d4ed8"/>
+    </marker>
+    <marker id="arrow-action" markerWidth="12" markerHeight="8" refX="11" refY="4" orient="auto">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#c2410c"/>
+    </marker>
+    <marker id="arrow-data" markerWidth="12" markerHeight="8" refX="11" refY="4" orient="auto">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#475569"/>
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .domain { fill: #ffffff; stroke: #334155; stroke-width: 2.2; rx: 10; }
+      .domain-title { font-family: Arial, sans-serif; font-weight: 700; font-size: 24px; fill: #0f172a; text-anchor: middle; }
+      .domain-subtitle { font-family: Arial, sans-serif; font-weight: 600; font-size: 15px; fill: #334155; text-anchor: middle; }
+      .box { fill: #ffffff; stroke: #64748b; stroke-width: 1.7; rx: 6; }
+      .node-title { font-family: Arial, sans-serif; font-weight: 700; font-size: 17px; fill: #0f172a; text-anchor: middle; }
+      .node-line { font-family: Arial, sans-serif; font-size: 13px; fill: #334155; text-anchor: middle; }
+      .small { font-family: Arial, sans-serif; font-size: 12px; fill: #334155; text-anchor: middle; }
+      .tiny { font-family: Arial, sans-serif; font-size: 11px; fill: #334155; text-anchor: middle; }
+      .topic { stroke: #15803d; stroke-width: 2; fill: none; marker-end: url(#arrow-topic); }
+      .service { stroke: #1d4ed8; stroke-width: 2.2; fill: none; marker-end: url(#arrow-service); }
+      .action { stroke: #c2410c; stroke-width: 2.4; fill: none; marker-end: url(#arrow-action); }
+      .data { stroke: #475569; stroke-width: 1.8; fill: none; marker-end: url(#arrow-data); }
+      .label-bg { fill: #ffffff; stroke: #cbd5e1; stroke-width: 0.8; rx: 4; }
+      .label-topic { font-family: Arial, sans-serif; font-size: 12px; fill: #166534; text-anchor: middle; }
+      .label-service { font-family: Arial, sans-serif; font-size: 12px; fill: #1e40af; text-anchor: middle; }
+      .label-action { font-family: Arial, sans-serif; font-size: 12px; fill: #9a3412; text-anchor: middle; }
+      .label-data { font-family: Arial, sans-serif; font-size: 12px; fill: #334155; text-anchor: middle; }
+      .legend { font-family: Arial, sans-serif; font-size: 14px; fill: #0f172a; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1800" height="1180"/>
+
+  <!-- Domains -->
+  <rect class="domain" x="35" y="35" width="500" height="1095"/>
+  <text class="domain-title" x="285" y="70">CENTRAL PC</text>
+  <text class="domain-subtitle" x="285" y="95">Dashboard + Mission Control UI + DB Bridge</text>
+
+  <rect class="domain" x="585" y="35" width="1180" height="510"/>
+  <text class="domain-title" x="1175" y="70">/robot3 TURTLEBOT4</text>
+  <text class="domain-subtitle" x="1175" y="95">Patient Rounding AMR</text>
+
+  <rect class="domain" x="585" y="590" width="1180" height="540"/>
+  <text class="domain-title" x="1175" y="625">/robot6 TURTLEBOT4</text>
+  <text class="domain-subtitle" x="1175" y="650">Nurse Medication AMR</text>
+
+  <!-- Central PC nodes -->
+  <rect class="box" x="100" y="140" width="370" height="95"/>
+  <text class="node-title" x="285" y="170">dashboard_node</text>
+  <text class="node-line" x="285" y="194">start/cancel mission, unlock cart</text>
+  <text class="node-line" x="285" y="214">select patient, show state and alerts</text>
+
+  <rect class="box" x="100" y="310" width="370" height="105"/>
+  <text class="node-title" x="285" y="342">db_bridge_node</text>
+  <text class="node-line" x="285" y="367">Firestore repository adapter</text>
+  <text class="node-line" x="285" y="388">round plan, questionnaire, prescription</text>
+
+  <rect class="box" x="100" y="475" width="370" height="80"/>
+  <text class="node-title" x="285" y="507">Firebase / Central DB</text>
+  <text class="node-line" x="285" y="531">patients, rooms, beds, meds, visit logs</text>
+
+  <rect class="box" x="100" y="625" width="370" height="90"/>
+  <text class="node-title" x="285" y="657">alert_monitor</text>
+  <text class="node-line" x="285" y="681">pain max, absent patient, scan mismatch</text>
+  <text class="node-line" x="285" y="701">visible on dashboard</text>
+
+  <rect class="box" x="100" y="800" width="370" height="210"/>
+  <text class="node-title" x="285" y="830">Legend</text>
+  <line class="topic" x1="145" y1="865" x2="225" y2="865"/>
+  <text class="legend" x="245" y="870">[topic] publish / subscribe</text>
+  <line class="service" x1="145" y1="905" x2="225" y2="905"/>
+  <text class="legend" x="245" y="910">[srv] request / response</text>
+  <line class="action" x1="145" y1="945" x2="225" y2="945"/>
+  <text class="legend" x="245" y="950">[action] long-running goal</text>
+  <text class="small" x="285" y="985">RobotState: state:string, battery:float32,</text>
+  <text class="small" x="285" y="1004">error_code:int32, detail_json:string</text>
+
+  <!-- robot3 nodes -->
+  <rect class="box" x="660" y="145" width="260" height="120"/>
+  <text class="node-title" x="790" y="175">mission_manager_node</text>
+  <text class="node-line" x="790" y="199">rounding state machine</text>
+  <text class="node-line" x="790" y="219">revisit queue, exceptions</text>
+  <text class="node-line" x="790" y="239">robot_namespace=/robot3</text>
+
+  <rect class="box" x="1045" y="130" width="250" height="105"/>
+  <text class="node-title" x="1170" y="162">Nav2 Stack</text>
+  <text class="node-line" x="1170" y="186">navigate_to_pose</text>
+  <text class="node-line" x="1170" y="207">hospital map + costmap</text>
+
+  <rect class="box" x="1420" y="130" width="250" height="105"/>
+  <text class="node-title" x="1545" y="162">Create3 Docking</text>
+  <text class="node-line" x="1545" y="186">undock / dock</text>
+  <text class="node-line" x="1545" y="207">result is_docked:bool</text>
+
+  <rect class="box" x="660" y="330" width="260" height="115"/>
+  <text class="node-title" x="790" y="360">questionnaire_node</text>
+  <text class="node-line" x="790" y="384">patient present/matched</text>
+  <text class="node-line" x="790" y="405">answers_json, pain_score:int32</text>
+
+  <rect class="box" x="1045" y="330" width="250" height="115"/>
+  <text class="node-title" x="1170" y="360">obstacle_detector_node</text>
+  <text class="node-line" x="1170" y="384">depth/image to PointCloud2</text>
+  <text class="node-line" x="1170" y="405">height filter z_min/z_max</text>
+
+  <rect class="box" x="1420" y="330" width="250" height="115"/>
+  <text class="node-title" x="1545" y="360">TB4 sensors/base</text>
+  <text class="node-line" x="1545" y="384">camera, depth, lidar, odom</text>
+  <text class="node-line" x="1545" y="405">Create3 base controller</text>
+
+  <!-- robot6 nodes -->
+  <rect class="box" x="660" y="700" width="260" height="120"/>
+  <text class="node-title" x="790" y="730">mission_manager_node</text>
+  <text class="node-line" x="790" y="754">medication state machine</text>
+  <text class="node-line" x="790" y="774">arrive room, stop follow</text>
+  <text class="node-line" x="790" y="794">robot_namespace=/robot6</text>
+
+  <rect class="box" x="1045" y="680" width="250" height="100"/>
+  <text class="node-title" x="1170" y="712">Nav2 Stack</text>
+  <text class="node-line" x="1170" y="736">navigate_to_pose</text>
+  <text class="node-line" x="1170" y="757">return to station</text>
+
+  <rect class="box" x="1420" y="680" width="250" height="100"/>
+  <text class="node-title" x="1545" y="712">Create3 Docking</text>
+  <text class="node-line" x="1545" y="736">undock / dock</text>
+  <text class="node-line" x="1545" y="757">result is_docked:bool</text>
+
+  <rect class="box" x="660" y="890" width="260" height="110"/>
+  <text class="node-title" x="790" y="922">scanner_node</text>
+  <text class="node-line" x="790" y="946">ScanPatient, ScanMedicine</text>
+  <text class="node-line" x="790" y="967">step_index:int32, match:bool</text>
+
+  <rect class="box" x="1045" y="890" width="250" height="110"/>
+  <text class="node-title" x="1170" y="922">ocr_node</text>
+  <text class="node-line" x="1170" y="946">GetOcrResult</text>
+  <text class="node-line" x="1170" y="967">raw_text, cleaned_text, confidence</text>
+
+  <rect class="box" x="1420" y="890" width="250" height="110"/>
+  <text class="node-title" x="1545" y="922">WebCam / OAK-D</text>
+  <text class="node-line" x="1545" y="946">image_raw, depth_image</text>
+  <text class="node-line" x="1545" y="967">used by OCR/tracking/obstacles</text>
+
+  <rect class="box" x="1045" y="1025" width="250" height="80"/>
+  <text class="node-title" x="1170" y="1055">nurse_tracker_node</text>
+  <text class="node-line" x="1170" y="1079">YOLO + depth + target pose</text>
+
+  <rect class="box" x="660" y="1025" width="260" height="80"/>
+  <text class="node-title" x="790" y="1055">cart_lock_node</text>
+  <text class="node-line" x="790" y="1079">locked:bool, operator_id:string</text>
+
+  <rect class="box" x="1420" y="1025" width="250" height="80"/>
+  <text class="node-title" x="1545" y="1055">obstacle_detector_node</text>
+  <text class="node-line" x="1545" y="1079">PointCloud2 to Nav2 costmap</text>
+
+  <!-- Central internal data links -->
+  <path class="data" d="M285 415 L285 475"/>
+  <rect class="label-bg" x="197" y="438" width="176" height="23"/>
+  <text class="label-data" x="285" y="454">Firestore API / SDK</text>
+
+  <path class="topic" d="M285 625 L285 555"/>
+  <rect class="label-bg" x="177" y="585" width="216" height="23"/>
+  <text class="label-topic" x="285" y="601">[topic] /nurse_alert</text>
+
+  <!-- Dashboard to robot3 services and topics -->
+  <path class="service" d="M470 165 C560 165, 570 165, 660 165"/>
+  <rect class="label-bg" x="493" y="106" width="235" height="41"/>
+  <text class="label-service" x="610" y="122">[srv] /robot3/start_mission</text>
+  <text class="label-service" x="610" y="137">StartMission PATIENT_ROUND</text>
+
+  <path class="service" d="M660 215 C570 215, 560 215, 470 215"/>
+  <rect class="label-bg" x="500" y="221" width="205" height="26"/>
+  <text class="label-service" x="602" y="239">[srv] cancel/get status</text>
+
+  <path class="topic" d="M660 252 C580 295, 570 250, 470 235"/>
+  <rect class="label-bg" x="486" y="260" width="252" height="41"/>
+  <text class="label-topic" x="612" y="276">[topic] /robot3/robot_state</text>
+  <text class="label-topic" x="612" y="291">RobotState + MissionEvent</text>
+
+  <!-- robot3 mission manager to DB -->
+  <path class="service" d="M660 185 C580 250, 560 330, 470 350"/>
+  <rect class="label-bg" x="505" y="318" width="245" height="57"/>
+  <text class="label-service" x="627" y="335">[srv] /db/get_round_plan</text>
+  <text class="label-service" x="627" y="350">[srv] update_visit_status</text>
+  <text class="label-service" x="627" y="365">[srv] update_questionnaire</text>
+
+  <!-- robot3 actions -->
+  <path class="action" d="M920 180 L1045 180"/>
+  <rect class="label-bg" x="922" y="104" width="202" height="41"/>
+  <text class="label-action" x="1023" y="120">[action] /robot3/navigate_to_pose</text>
+  <text class="label-action" x="1023" y="135">PoseStamped float64 pose</text>
+
+  <path class="action" d="M1295 180 L1420 180"/>
+  <rect class="label-bg" x="1304" y="104" width="205" height="41"/>
+  <text class="label-action" x="1406" y="120">[action] /robot3/undock</text>
+  <text class="label-action" x="1406" y="135">[action] /robot3/dock</text>
+
+  <path class="service" d="M790 265 L790 330"/>
+  <rect class="label-bg" x="646" y="287" width="288" height="28"/>
+  <text class="label-service" x="790" y="306">[srv] patient_check + questionnaire</text>
+
+  <path class="topic" d="M1545 330 C1450 300, 1340 335, 1295 365"/>
+  <rect class="label-bg" x="1314" y="309" width="225" height="39"/>
+  <text class="label-topic" x="1426" y="325">[topic] /robot3/camera/depth</text>
+  <text class="label-topic" x="1426" y="340">Image / CompressedImage</text>
+
+  <path class="topic" d="M1170 330 L1170 235"/>
+  <rect class="label-bg" x="1038" y="270" width="264" height="39"/>
+  <text class="label-topic" x="1170" y="286">[topic] /robot3/obstacles/points</text>
+  <text class="label-topic" x="1170" y="301">sensor_msgs/PointCloud2</text>
+
+  <!-- Dashboard to robot6 services and topics -->
+  <path class="service" d="M470 180 C560 560, 570 715, 660 735"/>
+  <rect class="label-bg" x="489" y="671" width="242" height="41"/>
+  <text class="label-service" x="610" y="687">[srv] /robot6/start_mission</text>
+  <text class="label-service" x="610" y="702">StartMission MEDICATION</text>
+
+  <path class="topic" d="M660 790 C570 795, 550 240, 470 225"/>
+  <rect class="label-bg" x="500" y="742" width="248" height="41"/>
+  <text class="label-topic" x="624" y="758">[topic] /robot6/robot_state</text>
+  <text class="label-topic" x="624" y="773">RobotState + MissionEvent</text>
+
+  <!-- robot6 mission manager to DB -->
+  <path class="service" d="M660 752 C560 700, 560 400, 470 372"/>
+  <rect class="label-bg" x="493" y="551" width="250" height="41"/>
+  <text class="label-service" x="618" y="567">[srv] medication mission log</text>
+  <text class="label-service" x="618" y="582">visit/complete/error update</text>
+
+  <!-- robot6 actions -->
+  <path class="action" d="M920 730 L1045 730"/>
+  <rect class="label-bg" x="923" y="650" width="202" height="41"/>
+  <text class="label-action" x="1024" y="666">[action] /robot6/navigate_to_pose</text>
+  <text class="label-action" x="1024" y="681">PoseStamped float64 pose</text>
+
+  <path class="action" d="M1295 730 L1420 730"/>
+  <rect class="label-bg" x="1305" y="650" width="205" height="41"/>
+  <text class="label-action" x="1407" y="666">[action] /robot6/undock</text>
+  <text class="label-action" x="1407" y="681">[action] /robot6/dock</text>
+
+  <!-- dashboard/cart/scanner services -->
+  <path class="service" d="M470 205 C580 830, 590 1040, 660 1060"/>
+  <rect class="label-bg" x="493" y="1007" width="244" height="41"/>
+  <text class="label-service" x="615" y="1023">[srv] /robot6/set_cart_lock</text>
+  <text class="label-service" x="615" y="1038">locked:bool, operator_id</text>
+
+  <path class="service" d="M470 215 C570 780, 580 910, 660 930"/>
+  <rect class="label-bg" x="490" y="878" width="250" height="57"/>
+  <text class="label-service" x="615" y="895">[srv] /robot6/scan_patient</text>
+  <text class="label-service" x="615" y="910">ScanPatient patient_id:string</text>
+  <text class="label-service" x="615" y="925">[srv] /robot6/scan_medicine</text>
+
+  <path class="service" d="M920 945 L1045 945"/>
+  <rect class="label-bg" x="916" y="835" width="217" height="41"/>
+  <text class="label-service" x="1024" y="851">[srv] /robot6/get_ocr_result</text>
+  <text class="label-service" x="1024" y="866">cleaned_text, confidence:float32</text>
+
+  <path class="topic" d="M1420 935 L1295 935"/>
+  <rect class="label-bg" x="1309" y="850" width="213" height="41"/>
+  <text class="label-topic" x="1415" y="866">[topic] /robot6/camera/image_raw</text>
+  <text class="label-topic" x="1415" y="881">sensor_msgs/Image</text>
+
+  <path class="service" d="M790 890 C690 760, 620 405, 470 370"/>
+  <rect class="label-bg" x="515" y="782" width="255" height="57"/>
+  <text class="label-service" x="642" y="799">[srv] /db/get_prescription</text>
+  <text class="label-service" x="642" y="814">[srv] /db/verify_medicine</text>
+  <text class="label-service" x="642" y="829">patient_id, step_index, text</text>
+
+  <!-- robot6 tracking and obstacle topics -->
+  <path class="service" d="M920 800 C980 850, 1050 985, 1115 1025"/>
+  <rect class="label-bg" x="930" y="832" width="236" height="41"/>
+  <text class="label-service" x="1048" y="848">[srv] /robot6/start_tracking</text>
+  <text class="label-service" x="1048" y="863">[srv] /robot6/stop_tracking</text>
+
+  <path class="topic" d="M1170 1025 C1170 935, 1170 820, 1170 780"/>
+  <rect class="label-bg" x="1047" y="812" width="246" height="57"/>
+  <text class="label-topic" x="1170" y="829">[topic] /robot6/tracking_target</text>
+  <text class="label-topic" x="1170" y="844">TargetBBox bbox:float32[4]</text>
+  <text class="label-topic" x="1170" y="859">or /robot6/cmd_vel Twist</text>
+
+  <path class="topic" d="M1420 955 C1330 1005, 1260 1038, 1295 1065"/>
+  <rect class="label-bg" x="1290" y="1010" width="222" height="39"/>
+  <text class="label-topic" x="1401" y="1026">[topic] /robot6/depth/image_raw</text>
+  <text class="label-topic" x="1401" y="1041">to tracker / obstacles</text>
+
+  <path class="topic" d="M1545 1025 C1470 815, 1365 745, 1295 745"/>
+  <rect class="label-bg" x="1316" y="795" width="264" height="39"/>
+  <text class="label-topic" x="1448" y="811">[topic] /robot6/obstacles/points</text>
+  <text class="label-topic" x="1448" y="826">sensor_msgs/PointCloud2</text>
+
+  <!-- alerts -->
+  <path class="topic" d="M660 340 C560 500, 550 650, 470 668"/>
+  <rect class="label-bg" x="492" y="468" width="250" height="39"/>
+  <text class="label-topic" x="617" y="484">[topic] /nurse_alert</text>
+  <text class="label-topic" x="617" y="499">pain_score == max / absent</text>
+
+  <path class="topic" d="M660 910 C560 820, 550 700, 470 675"/>
+  <rect class="label-bg" x="500" y="725" width="247" height="39"/>
+  <text class="label-topic" x="623" y="741">[topic] /nurse_alert</text>
+  <text class="label-topic" x="623" y="756">medicine mismatch / OCR fail</text>
+</svg>

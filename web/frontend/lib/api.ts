@@ -137,6 +137,40 @@ export async function ocr(blob: Blob): Promise<{ text: string }> {
   return r.json();
 }
 
+// ── 시나리오 B — 간호사 카트 (nurse_cart) 트리거 ──────────────────────────────
+export type NurseCartPhase =
+  | "idle"
+  | "arrived"
+  | "tracking"
+  | "bed_arrived"
+  | "wait_qr"
+  | "returning"
+  | "done";
+
+/** 회진 시작 (staff) — 시나리오 B 전체(약품실→OCR→추종→홈 복귀·도킹). */
+export async function startRound(): Promise<{ ok: boolean }> {
+  const r = await fetch(`${API_BASE}/api/nurse_cart/start`, { method: "POST", credentials: "include" });
+  if (!r.ok) throw new Error(`/api/nurse_cart/start → ${r.status}`);
+  return r.json();
+}
+
+/** OCR 완료 (staff) — 로봇: 약품실 입구 이동 후 간호사 추종 시작. */
+export async function nurseCartOcrDone(): Promise<{ ok: boolean }> {
+  const r = await fetch(`${API_BASE}/api/nurse_cart/ocr_done`, { method: "POST", credentials: "include" });
+  if (!r.ok) throw new Error(`/api/nurse_cart/ocr_done → ${r.status}`);
+  return r.json();
+}
+
+/** 회진 종료 (staff) — 로봇: 추종 중지 후 홈 복귀·도킹. */
+export async function nurseCartRoundDone(): Promise<{ ok: boolean }> {
+  const r = await fetch(`${API_BASE}/api/nurse_cart/round_done`, { method: "POST", credentials: "include" });
+  if (!r.ok) throw new Error(`/api/nurse_cart/round_done → ${r.status}`);
+  return r.json();
+}
+
+/** 로봇 현재 단계 (공개) — idle | arrived | tracking | done. */
+export const getNurseCartPhase = () => getJSON<{ phase: NurseCartPhase }>("/api/nurse_cart/phase");
+
 export type Injection = {
   약품명?: string;
   약물명?: string;

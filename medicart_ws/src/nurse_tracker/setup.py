@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'tracker_node = nurse_tracker.tracker_node:main',
+            'nav_goal_follower_node = nurse_tracker.nav_goal_follower_node:main',
         ],
     },
 )
