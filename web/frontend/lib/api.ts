@@ -128,6 +128,21 @@ export async function markIntakeDone(pid: string): Promise<{ ok: boolean }> {
   return r.json();
 }
 
+// ── 순회 문진 하이브리드 핸드셰이크 (로봇 정차↔웹) ────────────────────────────
+// 로봇이 도착한 병상 단계. phase: 'idle' | 'arrived', stop: 도착 병상(idx/room).
+export type PatrolPhase = { phase: "idle" | "arrived"; stop: { idx?: number; room?: string; ts?: number } };
+export const getPatrolPhase = () => getJSON<PatrolPhase>("/api/patrol/phase");
+
+// 정차 종료(문진/부재중) → 로봇이 다음 병상(또는 복귀)으로 진행하도록 신호.
+export async function sendPatrolAdvance(): Promise<{ ok: boolean }> {
+  const r = await fetch(`${API_BASE}/api/patrol/advance`, {
+    method: "POST", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  return r.json();
+}
+
 export type MapMeta = { available: boolean; resolution?: number; origin?: number[] };
 
 // 문진 입력 → 새 외래방문 기록 추가(visits[0]에 prepend, 최근 생체징후도 갱신)

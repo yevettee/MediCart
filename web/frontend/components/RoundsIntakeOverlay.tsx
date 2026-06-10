@@ -1,11 +1,9 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  API_BASE, getAmrs, getRooms, getPatient,
-  pushMission, verifyIdentify, setIntakeStatus,
+  getRooms, getPatient, pushMission, verifyIdentify, setIntakeStatus,
+  getPatrolPhase, sendPatrolAdvance,
 } from "@/lib/api";
-import { nearestArrival, type Pt } from "@/lib/follow";
-import { returnHome, waitDockState } from "@/lib/followActions";
 import QrScanner from "@/components/QrScanner";
 import IntakeForm from "@/components/IntakeForm";
 
@@ -24,6 +22,7 @@ type Outcome = { room: string; label: string; name: string; status: "done" | "ab
 
 const SCAN_SECONDS = 30;
 const ABSENT_SECONDS = 5;
+const POLL_MS = 1000;
 
 export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }: Props) {
   const [phase, setPhase] = useState<Phase>("starting");
@@ -33,77 +32,83 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
   const [warn, setWarn] = useState("");            // 불일치/미등록 인라인
   const [secs, setSecs] = useState(SCAN_SECONDS);
   const [results, setResults] = useState<Outcome[]>([]);
-  const [pose, setPose] = useState<Pt | undefined>();
-  const [docked, setDocked] = useState<boolean | undefined>();
 
   const stop = stops[idx];
-  const gotoFired = useRef<number>(-1);
-  const advancedRef = useRef(false);
+  const phaseRef = useRef<Phase>(phase);           // 폴링 콜백에서 최신 phase 참조
+  const lastArrivedRef = useRef<number>(-1);       // 처리한 도착 idx(중복 방지)
   const resetNonce = useRef(0);
+  const advancingRef = useRef(false);
 
-  // ── SSE: pose + dock ──────────────────────────────────────────────
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  // ── 시작: patrol_intake_mission 한 건 발행(로봇이 undock→순회 자율 수행) ──────
+  //   기존엔 브라우저가 undock+병상별 goto 를 하나씩 발행했으나(스텝마다 Firebase 왕복),
+  //   이제 시퀀서가 한 번에 받아 병상 사이 이동을 로봇 내부에서 처리한다.
   useEffect(() => {
     if (!active) return;
-    const es = new EventSource(`${API_BASE}/api/stream`, { withCredentials: true });
-    es.onmessage = (e) => {
-      try {
-        const d = JSON.parse(e.data);
-        if (d?.source !== ns) return;
-        if (d.pose) setPose({ x: d.pose.x, y: d.pose.y });
-        if (d.dock) setDocked(d.dock.is_docked);
-      } catch { /* ignore */ }
-    };
-    return () => es.close();
-  }, [active, ns]);
-
-  // ── 시작: (도크면) undock → 첫 호실 이동 ───────────────────────────
-  useEffect(() => {
-    if (!active) return;
-    setPhase("starting"); setIdx(0); setResults([]); setWarn(""); gotoFired.current = -1;
+    setPhase("starting"); setIdx(0); setResults([]); setWarn("");
+    lastArrivedRef.current = -1; advancingRef.current = false;
     let cancelled = false;
     (async () => {
       try {
-        const a = await getAmrs();
-        const isDocked = a[ns]?.dock?.is_docked ?? false;
-        if (isDocked) { await pushMission(ns, "undock"); await waitDockState(ns, false, 20000); }
-      } catch { /* 무시하고 진행 */ }
+        const stopsPayload = stops.map((s) => ({
+          x: s.x, y: s.y, yaw: s.yaw ?? 0, room: s.room, label: s.label,
+        }));
+        await pushMission(ns, "patrol_intake_mission", { stops: stopsPayload, home: dock });
+      } catch { /* 무시하고 진행 — 로봇 미연결 시 수동 버튼 폴백 */ }
       if (!cancelled) setPhase("moving");
     })();
     return () => { cancelled = true; };
-  }, [active, ns]);
-
-  // ── moving: goto 1회 발행 + 배정환자 이름 로드 ─────────────────────
-  useEffect(() => {
-    if (!active || phase !== "moving" || !stop) return;
-    setWarn("");
-    if (gotoFired.current !== idx) {
-      gotoFired.current = idx;
-      pushMission(ns, "goto", { x: stop.x, y: stop.y, yaw: stop.yaw ?? 0 }).catch(() => {});
-      (async () => {
-        try {
-          const rooms = await getRooms();
-          const apid = (rooms[stop.room] as { patient?: string } | undefined)?.patient ?? "";
-          const ap = apid ? await getPatient(apid).catch(() => null) : null;
-          setAssigned({ pid: apid, name: ap?.성명 ?? "" });
-        } catch { setAssigned({ pid: "", name: "" }); }
-      })();
-    }
-  }, [active, phase, idx, stop, ns]);
-
-  // ── moving: pose 근접 → 도착 시 scanning ──────────────────────────
-  useEffect(() => {
-    if (phase !== "moving" || !stop) return;
-    const a = nearestArrival(pose, [{ key: stop.key, label: stop.label, x: stop.x, y: stop.y }], null);
-    if (a) beginScan();
-  }, [phase, pose, stop]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [active, ns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const beginScan = useCallback(() => {
     setWarn(""); setScanPid(""); setSecs(SCAN_SECONDS);
     resetNonce.current += 1;
+    advancingRef.current = false;
     setPhase("scanning");
   }, []);
 
-  // ── 카운트다운 (scanning 30s / absent 5s) ─────────────────────────
+  // ── 도착 처리: 배정환자 로드 후 스캔 시작 ─────────────────────────────
+  const arriveAt = useCallback((i: number) => {
+    if (i < 0 || i >= stops.length) return;
+    lastArrivedRef.current = i;
+    setIdx(i);
+    const room = stops[i].room;
+    (async () => {
+      try {
+        const rooms = await getRooms();
+        const apid = (rooms[room] as { patient?: string } | undefined)?.patient ?? "";
+        const ap = apid ? await getPatient(apid).catch(() => null) : null;
+        setAssigned({ pid: apid, name: ap?.성명 ?? "" });
+      } catch { setAssigned({ pid: "", name: "" }); }
+    })();
+    beginScan();
+  }, [stops, beginScan]);
+
+  // ── 폴링: RTDB patrol/phase 로 도착·완료 감지 ─────────────────────────
+  useEffect(() => {
+    if (!active) return;
+    const poll = async () => {
+      try {
+        const p = await getPatrolPhase();
+        if (phaseRef.current === "returning") {
+          if (p.phase === "idle") setPhase("summary");
+          return;
+        }
+        if (
+          p.phase === "arrived" && typeof p.stop?.idx === "number" &&
+          p.stop.idx !== lastArrivedRef.current &&
+          (phaseRef.current === "moving" || phaseRef.current === "starting")
+        ) {
+          arriveAt(p.stop.idx);
+        }
+      } catch { /* 폴링 실패 무시 */ }
+    };
+    const t = setInterval(poll, POLL_MS);
+    return () => clearInterval(t);
+  }, [active, arriveAt]);
+
+  // ── 카운트다운 (scanning 30s / absent 5s) ─────────────────────────────
   useEffect(() => {
     if (phase !== "scanning" && phase !== "absent") return;
     const nonce = resetNonce.current;
@@ -113,7 +118,7 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
         if (s <= 1) {
           clearInterval(t);
           if (phase === "scanning") onScanTimeout();
-          else advance();
+          else finishStop();
           return 0;
         }
         return s - 1;
@@ -122,7 +127,7 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
     return () => clearInterval(t);
   }, [phase, idx]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── 스캔 결과 처리 ────────────────────────────────────────────────
+  // ── 스캔 결과 처리 ────────────────────────────────────────────────────
   const onScan = useCallback(async (pid: string) => {
     if (phase !== "scanning") return;
     try {
@@ -146,25 +151,23 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
 
   function onScanTimeout() { record("absent", assigned.pid); setSecs(ABSENT_SECONDS); resetNonce.current += 1; setPhase("absent"); }
   function onAbsentBtn() { record("absent", assigned.pid); setSecs(ABSENT_SECONDS); resetNonce.current += 1; setPhase("absent"); }
-  function onIntakeSaved() { record("done", scanPid); advance(); }
-  function onIntakeSkip() { record("absent", assigned.pid); advance(); }
+  function onIntakeSaved() { record("done", scanPid); finishStop(); }
+  function onIntakeSkip() { record("absent", assigned.pid); finishStop(); }
 
-  const advance = useCallback(() => {
-    if (advancedRef.current) return;
-    advancedRef.current = true;
-    setTimeout(() => { advancedRef.current = false; }, 300);
-    if (idx + 1 < stops.length) { setIdx(idx + 1); setPhase("moving"); }
-    else setPhase("returning");
-  }, [idx, stops.length]);
+  // ── 정차 종료: intake_done 신호 → 로봇이 다음 병상(또는 복귀)으로 진행 ──
+  const finishStop = useCallback(() => {
+    if (advancingRef.current) return;
+    advancingRef.current = true;
+    sendPatrolAdvance().catch(() => {});
+    if (lastArrivedRef.current + 1 >= stops.length) setPhase("returning");
+    else setPhase("moving");          // 다음 도착 신호 대기
+  }, [stops.length]);
 
-  // ── returning: dock 복귀 → 완료 시 summary ────────────────────────
-  useEffect(() => {
-    if (phase !== "returning") return;
-    returnHome(ns, dock).catch(() => {});
-  }, [phase, ns, dock]);
-  useEffect(() => {
-    if (phase === "returning" && docked === true) setPhase("summary");
-  }, [phase, docked]);
+  // ── 로봇 미연결 폴백: 수동으로 다음 병상 도착 처리 ───────────────────
+  const manualArrive = useCallback(() => {
+    const next = lastArrivedRef.current + 1;   // 최초 -1 → 0
+    if (next < stops.length) arriveAt(next);
+  }, [arriveAt, stops.length]);
 
   if (!active) return null;
 
@@ -180,7 +183,7 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
           {phase === "moving" && (assigned.name ? `${assigned.name}님께 이동 중` : `${stop?.label ?? ""} 이동 중`)}
           {phase === "returning" && "순회 완료 — 복귀·도킹 중"}
           {phase === "moving" && (
-            <button onClick={beginScan}
+            <button onClick={manualArrive}
               className="mt-8 mx-auto block px-6 py-3 rounded-xl text-[15px] bg-white/15 hover:bg-white/25 font-semibold">
               도착했어요 — 스캔 시작
             </button>
