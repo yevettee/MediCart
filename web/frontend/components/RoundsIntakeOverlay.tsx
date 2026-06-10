@@ -2,8 +2,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getRooms, getPatient, pushMission, verifyIdentify, setIntakeStatus,
-  getPatrolPhase, sendPatrolAdvance,
+  getPatrolPhase, sendPatrolAdvance, startPatrol,
 } from "@/lib/api";
+import { acceptArrival } from "@/lib/patrol";
 import QrScanner from "@/components/QrScanner";
 import IntakeForm from "@/components/IntakeForm";
 
@@ -39,6 +40,8 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
   const lastArrivedRef = useRef<number>(-1);       // 처리한 도착 idx(중복 방지)
   const resetNonce = useRef(0);
   const advancingRef = useRef(false);
+  const readyRef = useRef(false);      // startPatrol 성공/idle 관측 후 도착 수용 허용
+  const arrivingRef = useRef(false);   // arriveAt async 동안 poll 재진입 차단(동기 잠금)
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
 
@@ -49,14 +52,20 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
     if (!active) return;
     setPhase("starting"); setIdx(0); setResults([]); setWarn(""); setAborted(false);
     lastArrivedRef.current = -1; advancingRef.current = false;
+    readyRef.current = false; arrivingRef.current = false;
     let cancelled = false;
     (async () => {
+      const stopsPayload = stops.map((s) => ({
+        x: s.x, y: s.y, yaw: s.yaw ?? 0, room: s.room, label: s.label,
+      }));
       try {
-        const stopsPayload = stops.map((s) => ({
-          x: s.x, y: s.y, yaw: s.yaw ?? 0, room: s.room, label: s.label,
-        }));
-        await pushMission(ns, "patrol_intake_mission", { stops: stopsPayload, home: dock });
-      } catch { /* 무시하고 진행 — 로봇 미연결 시 수동 버튼 폴백 */ }
+        const r = await startPatrol(ns, { stops: stopsPayload, home: dock });
+        if (r?.ok) readyRef.current = true;   // 백엔드 reset 완료 → 이 시점부터 fresh
+        else throw new Error(r?.error || "startPatrol 실패");
+      } catch {
+        // 폴백: 깨끗한 시작 없이 직접 push — ready 는 idle 관측으로만
+        await pushMission(ns, "patrol_intake_mission", { stops: stopsPayload, home: dock }).catch(() => {});
+      }
       if (!cancelled) setPhase("moving");
     })();
     return () => { cancelled = true; };
@@ -71,7 +80,8 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
 
   // ── 도착 처리: 배정환자 로드 후 스캔 시작 ─────────────────────────────
   const arriveAt = useCallback((i: number) => {
-    if (i < 0 || i >= stops.length) return;
+    if (i < 0 || i >= stops.length) { arrivingRef.current = false; return; }
+    arrivingRef.current = true;        // 진입 동기 잠금(poll/수동 경로 공통)
     lastArrivedRef.current = i;
     setIdx(i);
     setWarn(""); setScanPid("");
@@ -88,6 +98,7 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
       setAssigned({ pid: apid, name });
       if (apid) beginScan();           // 배정환자 있음 → QR 스캔
       else setPhase("noassign");       // 배정환자 없음 → 안내 후 자동 다음
+      arrivingRef.current = false;     // phase 안정 후 잠금 해제
     })();
   }, [stops, beginScan]);
 
@@ -101,12 +112,12 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
           if (p.phase === "idle") setPhase("summary");
           return;
         }
-        if (
-          p.phase === "arrived" && typeof p.stop?.idx === "number" &&
-          p.stop.idx !== lastArrivedRef.current &&
-          (phaseRef.current === "moving" || phaseRef.current === "starting")
-        ) {
-          arriveAt(p.stop.idx);
+        if (!readyRef.current && p.phase === "idle") readyRef.current = true;   // 리셋 관측(백업)
+        if (acceptArrival({
+          polledPhase: p.phase, polledIdx: p.stop?.idx,
+          lastIdx: lastArrivedRef.current, ready: readyRef.current, arriving: arrivingRef.current,
+        })) {
+          arriveAt(p.stop!.idx!);      // arriveAt 진입에서 arrivingRef=true 로 잠금
         }
       } catch { /* 폴링 실패 무시 */ }
     };
@@ -165,9 +176,10 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
     if (advancingRef.current) return;
     advancingRef.current = true;
     sendPatrolAdvance(ns).catch(() => {});
+    setAssigned({ pid: "", name: "" });   // 다음 이동 시 직전 환자명 잔상 제거
     if (lastArrivedRef.current + 1 >= stops.length) setPhase("returning");
     else setPhase("moving");          // 다음 도착 신호 대기
-  }, [stops.length]);
+  }, [stops.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 배정환자 없음: 잠시 안내 후 자동으로 다음 병상(또는 복귀) ──────────
   useEffect(() => {
@@ -214,7 +226,7 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
       {(phase === "starting" || phase === "moving" || phase === "returning") && (
         <Center sub={`${ns.toUpperCase()} · 순회 문진`}>
           {phase === "starting" && "순회 문진을 가동합니다"}
-          {phase === "moving" && (assigned.name ? `${assigned.name}님께 이동 중` : `${stop?.label ?? ""} 이동 중`)}
+          {phase === "moving" && (lastArrivedRef.current < 0 ? "첫 병상으로 이동 중" : "다음 병상으로 이동 중")}
           {phase === "returning" && "순회 완료 — 복귀·도킹 중"}
           {phase === "moving" && (
             <button onClick={manualArrive}

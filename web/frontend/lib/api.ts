@@ -144,6 +144,15 @@ export async function sendPatrolAdvance(ns: string): Promise<{ ok: boolean }> {
   return r.json();
 }
 
+export async function startPatrol(ns: string, body: { stops: unknown[]; home: unknown }) {
+  const r = await fetch(`${API_BASE}/api/patrol/start`, {
+    method: "POST", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ns, ...body }),
+  });
+  return r.json() as Promise<{ ok: boolean; id?: string; error?: string }>;
+}
+
 export type MapMeta = { available: boolean; resolution?: number; origin?: number[] };
 
 // 문진 입력 → 새 외래방문 기록 추가(visits[0]에 prepend, 최근 생체징후도 갱신)
