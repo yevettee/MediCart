@@ -59,11 +59,11 @@ export default function Home() {
     getTargets().then((r) => setTargets(r.targets || {})).catch(() => {});
   }, []);
 
-  // 순회 문진 복귀 홈 — RTDB targets.home(robot3 도크, 대시보드 Docking Station 3 기준 -0.350975,-1.10605).
+  // 순회 문진 복귀 홈 — RTDB targets.home(robot3 도크, 대시보드 Docking Station 3 기준).
   // dock_after:true 로 도착 후 자동 도킹. patrol_intake_mission 의 home 으로 전달.
   const dock = targets["home"]
     ? { x: targets.home.x, y: targets.home.y, yaw: targets.home.yaw ?? 0, dock_after: true }
-    : { x: -0.350975, y: -1.10605, yaw: 0.00228335, dock_after: true };
+    : { x: -0.41441398221214687, y: -1.1834801683713334, yaw: 0.29826762982476646, dock_after: true };
 
   // 순회 문진 정차 리스트 — 타겟 좌표 + /rooms 키(배정환자).
   const roundStops: RoundStop[] = ROUND_MAP.flatMap((m) => {
