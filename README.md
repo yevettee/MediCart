@@ -54,11 +54,6 @@ python3 -m http.server 3000
 
 ## 모바일 설치
 
-### Android
-APK 파일(`두브란스_병원안내_v1.0.apk`)을 기기로 전송한 뒤:
-1. 설정 → **알 수 없는 앱 설치** 허용
-2. APK 탭하여 설치
-
 ### iOS (iPhone / iPad)
 1. **Safari**에서 로컬 서버 주소 접속
    ```
