@@ -49,23 +49,23 @@ IDLE, FETCH, NAV, DWELL, DONE, FAILED = 'idle', 'fetch', 'nav', 'dwell', 'done',
 BED_WAYPOINTS = [
     {
         'room_id': '101-A',
-        'x': -4.39228,
-        'y': -0.701007,
-        'yaw': 2.47368,
+        'x': -4.597506226772473,
+        'y': -0.5538369178713166,
+        'yaw': 2.8159358393246,
         'patient_id': '',
     },  # 101호 1번
     {
         'room_id': '101-B',
-        'x': -4.21788,
-        'y': -1.58667,
-        'yaw': -2.63024,
+        'x': -4.300127139174645,
+        'y': -1.3088913768325918,
+        'yaw': -2.8173998824860047,
         'patient_id': '',
     },  # 101호 2번
     {
         'room_id': '102-A',
-        'x': -3.94329,
-        'y': -3.34683,
-        'yaw': -3.1113,
+        'x': -4.164764521333983,
+        'y': -3.353771822329527,
+        'yaw': -2.9315422237255655,
         'patient_id': '',
     },  # 102호 호출
 ]
@@ -89,9 +89,9 @@ class PatrolMode(Node):
         # 순찰 종료 후 도킹 스테이션 복귀 leg(식별 없이 주행만) — dock 은 시퀀서가 수행.
         # 좌표 출처: dashboard DEFAULT_TARGETS 'Docking Station'(dock_after).
         self.declare_parameter('return_home', True)
-        self.declare_parameter('home_x', -0.354229)
-        self.declare_parameter('home_y', -0.118972)
-        self.declare_parameter('home_yaw', -0.0042011)
+        self.declare_parameter('home_x', -0.41441398221214687)
+        self.declare_parameter('home_y', -1.1834801683713334)
+        self.declare_parameter('home_yaw', 0.29826762982476646)
 
         self.ns = str(self.get_parameter('namespace').value).strip('/')
         self.name = str(self.get_parameter('mode_name').value)
