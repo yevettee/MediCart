@@ -1,3 +1,9 @@
+// 커버리지 경계(이 파일):
+//   검증됨 — B-TRIG-03(patrol_intake_mission {stops,home} 발행), B-PHASE-01(진입 시 ns로 patrol phase 폴링).
+//   DEFERRED(후속 태스크) — B-INTAKE-06(스캔 타임아웃 부재중 결과), B-PHASE-05(요약 집계),
+//     그리고 전체 phase 전이 시퀀스(starting→moving→scanning→intake/absent→returning→summary).
+//     사유: QR 스캔 이벤트·RTDB 'arrived' 신호로 상태머신을 다단계 구동해야 해 brittle.
+//     ABSENT_SECONDS·results·advancingRef 경로는 컴포넌트 통합/수동 검증으로 이관.
 import { render, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import RoundsIntakeOverlay from "./RoundsIntakeOverlay";
