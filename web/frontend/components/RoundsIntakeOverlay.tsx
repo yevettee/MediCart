@@ -32,6 +32,7 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
   const [warn, setWarn] = useState("");            // 불일치/미등록 인라인
   const [secs, setSecs] = useState(SCAN_SECONDS);
   const [results, setResults] = useState<Outcome[]>([]);
+  const [aborted, setAborted] = useState(false);   // 홈복귀로 순회 중단
 
   const stop = stops[idx];
   const phaseRef = useRef<Phase>(phase);           // 폴링 콜백에서 최신 phase 참조
@@ -46,7 +47,7 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
   //   이제 시퀀서가 한 번에 받아 병상 사이 이동을 로봇 내부에서 처리한다.
   useEffect(() => {
     if (!active) return;
-    setPhase("starting"); setIdx(0); setResults([]); setWarn("");
+    setPhase("starting"); setIdx(0); setResults([]); setWarn(""); setAborted(false);
     lastArrivedRef.current = -1; advancingRef.current = false;
     let cancelled = false;
     (async () => {
@@ -181,6 +182,19 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
     if (next < stops.length) arriveAt(next);
   }, [arriveAt, stops.length]);
 
+  // ── 홈 복귀·도킹: 남은 순회 취소 → 홈 좌표로 goto(dock_after) → 오버레이 종료 ──
+  const goHomeAndDock = useCallback(() => {
+    if (aborted) return;
+    if (!window.confirm("남은 순회를 취소하고 홈으로 복귀·도킹할까요?")) return;
+    advancingRef.current = true;          // 진행 차단
+    resetNonce.current += 1;              // 카운트다운 무효화
+    setAborted(true);
+    pushMission(ns, "goto", {
+      x: dock.x, y: dock.y, yaw: dock.yaw ?? 0, dock_after: true, label: "홈 복귀",
+    }).catch(() => {});
+    setPhase("summary");
+  }, [aborted, ns, dock]);
+
   if (!active) return null;
 
   const doneN = results.filter((r) => r.status === "done").length;
@@ -189,6 +203,13 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
 
   return (
     <div className="fixed inset-0 z-50 bg-[#0b1f1d] text-white grid place-items-center overflow-auto py-8">
+      {/* 전체화면 안내 중 항상 노출되는 홈 복귀·도킹 버튼(우측 하단) */}
+      {phase !== "summary" && phase !== "intake" && (
+        <button onClick={goHomeAndDock} disabled={aborted}
+          className="fixed bottom-6 right-6 z-[60] px-5 py-3 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold text-[14px] backdrop-blur shadow-lg disabled:opacity-50">
+          ⏏ 홈 복귀·도킹
+        </button>
+      )}
       {/* ── 시작/이동/복귀 메시지 ── */}
       {(phase === "starting" || phase === "moving" || phase === "returning") && (
         <Center sub={`${ns.toUpperCase()} · 순회 문진`}>
@@ -244,7 +265,7 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
       {/* ── 요약 ── */}
       {phase === "summary" && (
         <div className="w-full max-w-[520px] px-6 text-center">
-          <div className="text-[clamp(28px,6vw,52px)] font-bold">순회 문진 완료</div>
+          <div className="text-[clamp(28px,6vw,52px)] font-bold">{aborted ? "순회 중단 · 홈 복귀·도킹" : "순회 문진 완료"}</div>
           <div className="flex justify-center gap-8 mt-6 text-[20px]">
             <span className="text-green-300 font-bold">문진 완료 {doneN}</span>
             <span className="text-amber-300 font-bold">부재중 {absentN}</span>
