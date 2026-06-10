@@ -20,6 +20,7 @@ export default function MapView({ embedded = false, ns: nsProp, amrs: amrsProp, 
   const [targets, setTargets] = useState<Record<string, GotoTarget>>({});
   const [mapMeta, setMapMeta] = useState<MapMeta>({ available: false });
   const mapImg = useRef<HTMLImageElement | null>(null);
+  const homesRef = useRef<Record<string, { x: number; y: number; yaw: number }>>({}); // 로봇별 마지막 도킹 pose(홈) 래치
   const [mapReady, setMapReady] = useState(0); // 이미지 로드 트리거(리렌더)
   const [liveState, setLive] = useState(false);
   const live = liveProp ?? liveState;
@@ -111,6 +112,7 @@ export default function MapView({ embedded = false, ns: nsProp, amrs: amrsProp, 
     });
 
     // targets 오버레이 (침상·약품실·호실) — "dock" 키는 로봇별 마커로 별도 처리
+    ctx.save();
     Object.entries(targets).forEach(([key, t]) => {
       if (key === "dock") return;
       const px = X(t.x), py = Y(t.y);
@@ -120,11 +122,15 @@ export default function MapView({ embedded = false, ns: nsProp, amrs: amrsProp, 
       ctx.fillStyle = "#b9772e"; ctx.font = "600 10px 'Pretendard Variable'"; ctx.textAlign = "center";
       ctx.fillText(t.label || key, px, py - 10);
     });
+    ctx.restore();
 
-    // 로봇별 홈/도크 마커 — 도킹 중인 로봇의 pose(=amcl_pose)에서 도출
+    // 로봇별 홈/도크 마커 — 도킹 중일 때 pose 를 래치해 두고, 로봇이 떠나도 도크 위치를 지속 표시
     Object.entries(amrs).forEach(([src, a]) => {
-      const home = robotHome(a);
-      if (!home) return;
+      const h = robotHome(a);
+      if (h) homesRef.current[src] = h;     // 도킹 중이면 최신 홈으로 갱신
+    });
+    ctx.save();
+    Object.entries(homesRef.current).forEach(([src, home]) => {
       const px = X(home.x), py = Y(home.y);
       const col = AMR_COLOR[src] || "#0ca39a";
       roundRect(ctx, px - 7, py - 7, 14, 14, 3);
@@ -132,6 +138,7 @@ export default function MapView({ embedded = false, ns: nsProp, amrs: amrsProp, 
       ctx.fillStyle = col; ctx.font = "600 9px 'Pretendard Variable'"; ctx.textAlign = "center";
       ctx.fillText(`${src} home`, px, py + 18);
     });
+    ctx.restore();
 
     // AMR 마커 (+ LiDAR + 헤딩)
     Object.entries(amrs).forEach(([src, a]) => {
