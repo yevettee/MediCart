@@ -19,7 +19,7 @@
 흐름: 홈(RoundsIntakeOverlay) → `/api/patrol/start`(clear+reset+startPatrol{stops,home}) → RTDB `robot3/mission_pool` → db_node → `/robot3/mission_request` → `PatrolIntakeSequencer`(undock→정차 루프→복귀). 정차 루프: NavExecutor goto → 도착(`robot3/patrol/phase=arrived`) → 웹 getPatrolPhase → QR 배정환자 검증(verifyIdentify/getPatient) → 문진 submit/부재중 → `/api/patrol/advance` → RTDB → `/robot3/patrol/intake_done` → 다음 stop. `rooms_server`(ListRooms·room_lookup), `patient_identifier`(identifier_node·patient_validator·PersonDetector) ROS측 식별 옵션 표시.
 
 ## 다이어그램 3 — 공통 인프라 (양 시나리오 공유)
-`medicart-common-infra.drawio`. 레인: Web │ RTDB 스키마 │ db_bridge(6 노드) │ mission_manager/robot.
+`medicart-common-infra.drawio`. **수평 티어(밴드) 레이아웃** — 허브 토폴로지(모두 RTDB와 통신)라 세로 레인 대신 위→아래 계층으로 쌓아 흐름을 대부분 수직화: Web → RTDB(버스) → db_bridge(6노드 한 줄) → mission_manager 런타임 → robot AMR.
 RTDB 중심 배관: `amr_bridge`(텔레메트리→RTDB), `db_node`(mission_pool↔mission_request + feedback + 3 핸드셰이크 브리지), `camera_bridge`(annotated/rgb/depth), `prescription_server`(GetPrescription), `rooms_server`(ListRooms), `display_bridge`. Web(Flask app.py 라우트·auth RBAC·SSE, Next.js lib/api·auth·telemetry). `ModeArbiter` cmd_vel 단독소유 + `NavExecutor` + Create3/AMR. firebase_client.FirebaseClient 공유.
 
 ## 검증

@@ -104,6 +104,77 @@ def build(diagram_name, lanes, nodes, edges, legend):
         f'</mxGraphModel></diagram></mxfile>\n')
 
 
+def build_tiered(diagram_name, tiers, meta, edges, legend):
+    """수평 밴드(티어) 레이아웃 — 허브 토폴로지용(위→아래 계층, 흐름이 대부분 수직).
+    tiers: [(title, color_idx, [node_id...])], meta: id->(title,[subs]). 노드는 밴드 내 좌→우 균등 배치."""
+    TBOX_W, TGAP, BAND_TITLE, BAND_PAD, BAND_VGAP, TOP_T = 240, 48, 28, 16, 52, 86
+
+    def tier_w(ids):
+        return len(ids) * TBOX_W + (len(ids) - 1) * TGAP
+
+    band_h = [max(node_h(meta[i][1]) for i in ids) + BAND_TITLE + BAND_PAD for _, _, ids in tiers]
+    content_w = max(tier_w(ids) for _, _, ids in tiers)
+    width = content_w + 120
+    ys, y = [], TOP_T
+    for bh in band_h:
+        ys.append(y)
+        y += bh + BAND_VGAP
+    height = y + 20
+    cells, cid = [], [2]
+
+    def nid():
+        cid[0] += 1
+        return f"t{cid[0]}"
+
+    for ti, (ttitle, col, ids) in enumerate(tiers):
+        by, bh = ys[ti], band_h[ti]
+        c = col % len(LANE_COLORS)
+        bstyle = (f"rounded=0;html=0;fillColor={LANE_COLORS[c]};strokeColor={LANE_STROKE[c]};"
+                  f"opacity=55;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;"
+                  f"fontStyle=1;fontSize=13;fontColor=#333333")
+        cells.append(
+            f'<mxCell id="band{ti}" value="{esc(ttitle)}" style="{bstyle}" vertex="1" parent="1">'
+            f'<mxGeometry x="40" y="{by}" width="{width - 80}" height="{bh}" as="geometry"/></mxCell>')
+        tw = tier_w(ids)
+        sx = (width - tw) // 2
+        for i, node_id in enumerate(ids):
+            t, subs = meta[node_id]
+            x = sx + i * (TBOX_W + TGAP)
+            ny = by + BAND_TITLE
+            h = node_h(subs)
+            val = t + ("\n" + "\n".join("· " + s for s in subs) if subs else "")
+            nstyle = (f"rounded=1;html=0;whiteSpace=wrap;align=left;verticalAlign=top;spacing=7;"
+                      f"fillColor={NODE_FILL[c]};strokeColor={NODE_STROKE[c]};fontSize=11")
+            cells.append(
+                f'<mxCell id="{node_id}" value="{esc(val)}" style="{nstyle}" vertex="1" parent="1">'
+                f'<mxGeometry x="{x}" y="{ny}" width="{TBOX_W}" height="{h}" as="geometry"/></mxCell>')
+
+    cells.append(
+        f'<mxCell id="legend" value="{esc(legend)}" '
+        f'style="rounded=1;html=0;whiteSpace=wrap;align=left;verticalAlign=top;spacing=8;'
+        f'fillColor=#FFFFFF;strokeColor=#999999;fontSize=10;dashed=1" vertex="1" parent="1">'
+        f'<mxGeometry x="40" y="8" width="460" height="62" as="geometry"/></mxCell>')
+
+    for src, dst, label, *opt in edges:
+        dashed = "dashed=1;" if (opt and "dash" in opt[0]) else ""
+        style = (f"edgeStyle=orthogonalEdgeStyle;rounded=1;html=0;{dashed}"
+                 f"fontSize=9;fontColor=#222222;strokeColor=#666666;endArrow=block;"
+                 f"labelBackgroundColor=#FFFFFF;jettySize=auto;orthogonalLoop=1")
+        cells.append(
+            f'<mxCell id="{nid()}" value="{esc(label)}" style="{style}" edge="1" parent="1" '
+            f'source="{src}" target="{dst}"><mxGeometry relative="1" as="geometry"/></mxCell>')
+
+    body = "\n".join(cells)
+    return (
+        f'<mxfile host="app.diagrams.net">\n'
+        f'<diagram name="{esc(diagram_name)}">\n'
+        f'<mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" '
+        f'tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" '
+        f'pageWidth="{width}" pageHeight="{height}" math="0" shadow="0">\n'
+        f'<root><mxCell id="0"/><mxCell id="1" parent="0"/>\n{body}\n</root>\n'
+        f'</mxGraphModel></diagram></mxfile>\n')
+
+
 # ============================================================================
 # 다이어그램 1 — 간호사 투약 (robot6)
 # ============================================================================
@@ -205,24 +276,29 @@ PI_LEGEND = ("범례: ns=robot3 (순회 문진 전담)\n"
 # ============================================================================
 # 다이어그램 3 — 공통 인프라
 # ============================================================================
-CI_LANES = ["Web (Next.js + Flask)", "Firebase RTDB (per-robot)", "db_bridge (6 nodes)",
-            "mission_manager / robot"]
-CI_NODES = {
-    "x1": (0, 0, "Next.js 프론트", ["page/console/ocr/patients/intake/qr", "lib/api.ts · auth.ts(RBAC) · telemetry.ts", "MapView · overlays · middleware"]),
-    "x2": (0, 2, "Flask 백엔드 app.py", ["/api: amrs · stream(SSE) · map · targets · rooms · patients", "nurse_cart/* · patrol/* · intake · missions", "auth.py required_role_for_path · _req_ns"]),
-    "x3": (1, 0, "RTDB robot3 / robot6", ["amcl_pose·odom·battery·dock_status·imu·scan", "robot_mode·online·stamp(ms)", "mission_pool · nurse_cart · patrol"]),
-    "x4": (1, 3, "RTDB 공유 노드", ["patients · rooms · targets", "display · intake_pending · ocr"]),
-    "x5": (2, 0, "amr_bridge", ["amcl_pose/odom/battery/dock/imu/scan/robot_mode → RTDB", "firebase_client.py"]),
-    "x6": (2, 1, "db_node", ["mission_pool → /ns/mission_request", "feedback + ocr_done/round_done/intake_done 브리지", "mission_queue.py"]),
-    "x7": (2, 2, "camera_bridge", ["annotated_image · rgb/depth(compressed) → RTDB"]),
-    "x8": (2, 3, "prescription_server", ["GetPrescription srv", "patient_lookup.py"]),
-    "x9": (2, 4, "rooms_server", ["ListRooms srv", "room_lookup.py"]),
-    "x10": (2, 5, "display_bridge", ["display/current → topic"]),
-    "x14": (3, 0, "robot AMR (TurtleBot4 / Create3)", ["amcl_pose·scan·battery·dock_status pub", "OAK-D rgb/depth"]),
-    "x11": (3, 1, "MissionManagerNode", ["action 디스패치 · mission_executor", "/ns/mission_feedback"]),
-    "x12": (3, 3, "ModeArbiter (cmd_vel 단독소유)", ["mode_arbitration: arbitrate/safety_gate", "우선순위 선점/복귀", "/ns/mode/*/set|cmd_vel|status (latched)"]),
-    "x13": (3, 5, "NavExecutor + 베이스", ["navigate_to_pose / dock / undock", "/ns/cmd_vel"]),
+CI_META = {
+    "x1": ("Next.js 프론트", ["page/console/ocr/patients/intake/qr", "lib/api.ts · auth.ts(RBAC) · telemetry.ts", "MapView · overlays · middleware"]),
+    "x2": ("Flask 백엔드 app.py", ["/api: amrs · stream(SSE) · map · targets · patients", "nurse_cart/* · patrol/* · intake · missions", "auth.py required_role_for_path · _req_ns"]),
+    "x3": ("RTDB robot3 / robot6 (per-robot)", ["amcl_pose·odom·battery·dock_status·imu·scan", "robot_mode·online·stamp(ms)", "mission_pool · nurse_cart · patrol"]),
+    "x4": ("RTDB 공유 노드", ["patients · rooms · targets", "display · intake_pending · ocr"]),
+    "x5": ("amr_bridge", ["telemetry topics → RTDB", "firebase_client.py"]),
+    "x7": ("camera_bridge", ["annotated · rgb/depth → RTDB"]),
+    "x6": ("db_node", ["mission_pool → /ns/mission_request", "+ 3 핸드셰이크 브리지", "mission_queue.py"]),
+    "x8": ("prescription_server", ["GetPrescription srv", "patient_lookup.py"]),
+    "x9": ("rooms_server", ["ListRooms srv", "room_lookup.py"]),
+    "x10": ("display_bridge", ["display/current → topic"]),
+    "x11": ("MissionManagerNode", ["action 디스패치 · mission_executor", "/ns/mission_feedback"]),
+    "x12": ("ModeArbiter (cmd_vel 단독소유)", ["mode_arbitration: arbitrate/safety_gate", "우선순위 선점/복귀", "/ns/mode/*/set|cmd_vel|status"]),
+    "x13": ("NavExecutor + 베이스", ["navigate_to_pose / dock / undock", "/ns/cmd_vel"]),
+    "x14": ("robot AMR (TurtleBot4 / Create3)", ["amcl_pose·scan·battery·dock_status pub", "OAK-D rgb/depth"]),
 }
+CI_TIERS = [
+    ("Web (Next.js + Flask)", 0, ["x1", "x2"]),
+    ("Firebase RTDB — 크로스-PC 버스", 1, ["x3", "x4"]),
+    ("db_bridge — RTDB ↔ ROS 브리지", 2, ["x5", "x7", "x6", "x8", "x9", "x10"]),
+    ("mission_manager 런타임", 3, ["x11", "x12", "x13"]),
+    ("robot AMR (하드웨어)", 5, ["x14"]),
+]
 CI_EDGES = [
     ("x1", "x2", "HTTP fetch / SSE"),
     ("x2", "x3", "read/write (firebase-admin)"),
@@ -247,17 +323,24 @@ CI_LEGEND = ("범례: {ns} = robot3 | robot6\n"
              "RTDB = 유일한 크로스-PC 버스\n"
              "점선=서비스(요청/응답), 실선=토픽/액션")
 
-DIAGRAMS = [
+WORKFLOWS = [
     ("medicart-nurse-cart-workflow", "간호사 투약 워크플로우 (robot6)", NC_LANES, NC_NODES, NC_EDGES, NC_LEGEND),
     ("medicart-patrol-intake-workflow", "순회 문진 워크플로우 (robot3)", PI_LANES, PI_NODES, PI_EDGES, PI_LEGEND),
-    ("medicart-common-infra", "공통 인프라 (양 시나리오 공유)", CI_LANES, CI_NODES, CI_EDGES, CI_LEGEND),
 ]
 
 if __name__ == "__main__":
     out_dir = os.path.dirname(os.path.abspath(__file__))
-    for fname, title, lanes, nodes, edges, legend in DIAGRAMS:
-        xml = build(title, lanes, nodes, edges, legend)
+
+    def write(fname, xml, count):
         path = os.path.join(out_dir, fname + ".drawio")
         with open(path, "w", encoding="utf-8") as f:
             f.write(xml)
-        print(f"wrote {path}  ({len(nodes)} nodes, {len(edges)} edges)")
+        print(f"wrote {path}  ({count})")
+
+    for fname, title, lanes, nodes, edges, legend in WORKFLOWS:
+        write(fname, build(title, lanes, nodes, edges, legend),
+              f"{len(nodes)} nodes, {len(edges)} edges, vertical-lane")
+    # 공통 인프라 — 수평 티어 레이아웃(허브 토폴로지)
+    write("medicart-common-infra",
+          build_tiered("공통 인프라 (양 시나리오 공유)", CI_TIERS, CI_META, CI_EDGES, CI_LEGEND),
+          f"{len(CI_META)} nodes, {len(CI_EDGES)} edges, tiered")
