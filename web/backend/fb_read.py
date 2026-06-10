@@ -554,7 +554,7 @@ def targets_seed():
         "dock":   {"label": "Docking Station", "x": -0.354229, "y": -0.118972,
                    "yaw": -0.0042011, "dock_after": True},
         # 순회 문진 복귀 홈(robot3) — 도킹 위치. patrol_intake_mission home 으로 사용.
-        "home":   {"label": "홈", "x": -0.89, "y": -0.66, "yaw": 0, "dock_after": True},
+        "home":   {"label": "홈", "x": -0.350975, "y": -1.10605, "yaw": 0.00228335, "dock_after": True},
     }
 
 
