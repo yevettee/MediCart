@@ -462,6 +462,15 @@ def set_patrol_advance(ns: str = PRIMARY_NS):
     _init().reference(f"{ns}/patrol/intake_done").set(True)
 
 
+def reset_patrol(ns: str = PRIMARY_NS) -> bool:
+    """순회 시작 전 stale 제거 — {ns}/patrol 을 idle/미완료로 set(이전 stop 키까지 제거).
+    잘못된 ns 는 firebase 접근 전 False."""
+    if not valid_robot_ns(ns):
+        return False
+    _init().reference(f"{ns}/patrol").set({"phase": "idle", "intake_done": False})
+    return True
+
+
 def intake_pending_payload(data, ts):
     """비로그인 환자 자기제출 문진 → intake_pending 레코드(순수)."""
     data = data or {}

@@ -249,3 +249,11 @@ def test_phase_or_idle():
     assert fb_read._phase_or_idle("") == "idle"
     assert fb_read._phase_or_idle(123) == "idle"
     assert fb_read._phase_or_idle("tracking") == "tracking"
+
+
+def test_reset_patrol_rejects_bad_ns():
+    """잘못된 ns 는 firebase 접근 전에 False 로 거부(순수부)."""
+    import fb_read
+    assert fb_read.reset_patrol("../x") is False
+    assert fb_read.reset_patrol("") is False
+    assert fb_read.reset_patrol("robot9") is False

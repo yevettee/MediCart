@@ -495,6 +495,23 @@ def patrol_advance():
     return jsonify({"ok": True})
 
 
+@app.post("/api/patrol/start")
+def patrol_start():
+    """순회 문진 깨끗한 시작 — mission_pool 정리 + patrol stale 리셋 + patrol_intake_mission 발행.
+    body {ns, stops, home}. staff(/api/patrol prefix)."""
+    ns = _req_ns()
+    body = request.get_json(force=True, silent=True) or {}
+    try:
+        fb_read.clear_missions(ns)
+        fb_read.reset_patrol(ns)
+        mid, _ = fb_read.push_mission(
+            ns, "patrol_intake_mission",
+            {"stops": body.get("stops") or [], "home": body.get("home")})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "id": mid})
+
+
 @app.get("/api/map")
 def map_meta():
     if not (MAP_YAML and os.path.exists(MAP_YAML) and os.path.exists(MAP_PNG)):
