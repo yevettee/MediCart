@@ -13,12 +13,12 @@ type Props = {
   active: boolean;
   ns: string;
   stops: RoundStop[];
-  dock: { x: number; y: number; yaw?: number };
+  dock: { x: number; y: number; yaw?: number; dock_after?: boolean };
   onExit: () => void;
 };
 
-type Phase = "starting" | "moving" | "scanning" | "intake" | "absent" | "returning" | "summary";
-type Outcome = { room: string; label: string; name: string; status: "done" | "absent" };
+type Phase = "starting" | "moving" | "scanning" | "intake" | "absent" | "noassign" | "returning" | "summary";
+type Outcome = { room: string; label: string; name: string; status: "done" | "absent" | "none" };
 
 const SCAN_SECONDS = 30;
 const ABSENT_SECONDS = 5;
@@ -73,16 +73,19 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
     if (i < 0 || i >= stops.length) return;
     lastArrivedRef.current = i;
     setIdx(i);
+    setWarn(""); setScanPid("");
     const room = stops[i].room;
     (async () => {
+      let apid = "", name = "";
       try {
         const rooms = await getRooms();
-        const apid = (rooms[room] as { patient?: string } | undefined)?.patient ?? "";
-        const ap = apid ? await getPatient(apid).catch(() => null) : null;
-        setAssigned({ pid: apid, name: ap?.성명 ?? "" });
-      } catch { setAssigned({ pid: "", name: "" }); }
+        apid = (rooms[room] as { patient?: string } | undefined)?.patient ?? "";
+        if (apid) { const ap = await getPatient(apid).catch(() => null); name = ap?.성명 ?? ""; }
+      } catch { apid = ""; name = ""; }
+      setAssigned({ pid: apid, name });
+      if (apid) beginScan();           // 배정환자 있음 → QR 스캔
+      else setPhase("noassign");       // 배정환자 없음 → 안내 후 자동 다음
     })();
-    beginScan();
   }, [stops, beginScan]);
 
   // ── 폴링: RTDB patrol/phase 로 도착·완료 감지 ─────────────────────────
@@ -144,8 +147,8 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
     } catch { setWarn("검증 실패 — 다시 시도"); }
   }, [phase, stop, assigned.name]);
 
-  function record(status: "done" | "absent", pid: string) {
-    if (pid) setIntakeStatus(pid, status).catch(() => {});
+  function record(status: "done" | "absent" | "none", pid: string) {
+    if (pid && status !== "none") setIntakeStatus(pid, status).catch(() => {});
     setResults((r) => [...r, { room: stop?.room ?? "", label: stop?.label ?? "", name: assigned.name, status }]);
   }
 
@@ -163,6 +166,13 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
     else setPhase("moving");          // 다음 도착 신호 대기
   }, [stops.length]);
 
+  // ── 배정환자 없음: 잠시 안내 후 자동으로 다음 병상(또는 복귀) ──────────
+  useEffect(() => {
+    if (phase !== "noassign") return;
+    const t = setTimeout(() => { record("none", ""); finishStop(); }, 2500);
+    return () => clearTimeout(t);
+  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── 로봇 미연결 폴백: 수동으로 다음 병상 도착 처리 ───────────────────
   const manualArrive = useCallback(() => {
     const next = lastArrivedRef.current + 1;   // 최초 -1 → 0
@@ -173,6 +183,7 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
 
   const doneN = results.filter((r) => r.status === "done").length;
   const absentN = results.filter((r) => r.status === "absent").length;
+  const noneN = results.filter((r) => r.status === "none").length;
 
   return (
     <div className="fixed inset-0 z-50 bg-[#0b1f1d] text-white grid place-items-center overflow-auto py-8">
@@ -220,6 +231,14 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
         </Center>
       )}
 
+      {/* ── 배정환자 없음 → 자동 다음 ── */}
+      {phase === "noassign" && (
+        <Center sub={`${stop?.label ?? ""}`}>
+          배정 환자가 없습니다<br />
+          <span className="text-[0.5em] text-white/60">다음 병상으로 이동합니다</span>
+        </Center>
+      )}
+
       {/* ── 요약 ── */}
       {phase === "summary" && (
         <div className="w-full max-w-[520px] px-6 text-center">
@@ -227,13 +246,14 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
           <div className="flex justify-center gap-8 mt-6 text-[20px]">
             <span className="text-green-300 font-bold">문진 완료 {doneN}</span>
             <span className="text-amber-300 font-bold">부재중 {absentN}</span>
+            {noneN > 0 && <span className="text-white/50 font-bold">미배정 {noneN}</span>}
           </div>
           <div className="mt-6 flex flex-col gap-2 text-left">
             {results.map((r, i) => (
               <div key={i} className="flex items-center justify-between rounded-xl bg-white/10 px-4 py-2.5">
                 <span>{r.label} · {r.name || "-"}</span>
-                <span className={r.status === "done" ? "text-green-300 font-semibold" : "text-amber-300 font-semibold"}>
-                  {r.status === "done" ? "문진 완료" : "부재중"}
+                <span className={r.status === "done" ? "text-green-300 font-semibold" : r.status === "absent" ? "text-amber-300 font-semibold" : "text-white/50 font-semibold"}>
+                  {r.status === "done" ? "문진 완료" : r.status === "absent" ? "부재중" : "배정 환자 없음"}
                 </span>
               </div>
             ))}

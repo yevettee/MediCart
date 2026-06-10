@@ -183,10 +183,12 @@ def test_mission_payload_goto_missing_coords_rejected():
 def test_targets_seed_shape():
     import fb_read
     seed = fb_read.targets_seed()
-    assert len(seed) == 6
+    assert len(seed) == 7
     assert seed["dock"]["dock_after"] is True
     assert seed["dock"]["x"] == -0.354229 and seed["dock"]["y"] == -0.118972
     assert seed["t102_1"]["x"] == -4.3 and seed["t102_1"]["y"] == -3.39
+    assert seed["home"]["x"] == -0.89 and seed["home"]["y"] == -0.66
+    assert seed["home"]["dock_after"] is True
     for v in seed.values():
         assert "label" in v and "x" in v and "y" in v and "yaw" in v
 

@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getAmrs, getTargets, getMe, startRound, type AmrSnapshot, type GotoTarget } from "@/lib/api";
-import { isLive, robotHome } from "@/lib/telemetry";
+import { isLive } from "@/lib/telemetry";
 import { roleAtLeast, type Role } from "@/lib/auth";
 import { NURSE_CART_NS, PATROL_NS } from "@/lib/config";
 import RoundOverlay from "@/components/RoundOverlay";
@@ -12,6 +12,7 @@ import RoundsIntakeOverlay, { type RoundStop } from "@/components/RoundsIntakeOv
 const ROUND_MAP = [
   { targetKey: "t101_1", room: "101-A", label: "101호 1번" },
   { targetKey: "t101_2", room: "101-B", label: "101호 2번" },
+  { targetKey: "t102_1", room: "102-A", label: "102호 1번" },
 ];
 
 type Banner = {
@@ -31,7 +32,6 @@ const BANNERS: Banner[] = [
 export default function Home() {
   const [stat, setStat] = useState({ online: 0, total: 2 });
   const [targets, setTargets] = useState<Record<string, GotoTarget>>({});
-  const [amrs, setAmrs] = useState<Record<string, AmrSnapshot>>({});
   const [role, setRole] = useState<Role>("patient");
   const [roundConfirm, setRoundConfirm] = useState(false);
   const [roundActive, setRoundActive] = useState(false);
@@ -46,7 +46,6 @@ export default function Home() {
   useEffect(() => {
     const load = () =>
       getAmrs().then((a: Record<string, AmrSnapshot>) => {
-        setAmrs(a);
         const vals = Object.values(a);
         const online = vals.filter((s) => isLive(s?.stamp, 5000)).length;
         setStat({ online, total: Math.max(vals.length, 2) });
@@ -60,13 +59,11 @@ export default function Home() {
     getTargets().then((r) => setTargets(r.targets || {})).catch(() => {});
   }, []);
 
-  // 순회 문진(robot3) 복귀 홈: 도킹 중인 robot3 의 실제 pose(=amcl_pose)를 우선 사용.
-  // 미도킹/미수신이면 targets.dock → 기본값 순으로 폴백.
-  const dock =
-    robotHome(amrs[PATROL_NS]) ??
-    (targets["dock"]
-      ? { x: targets.dock.x, y: targets.dock.y, yaw: targets.dock.yaw }
-      : { x: -8, y: -6, yaw: 0 });
+  // 순회 문진 복귀 홈 — RTDB targets.home(고정 도킹 위치 -0.89,-0.66).
+  // dock_after:true 로 도착 후 자동 도킹. patrol_intake_mission 의 home 으로 전달.
+  const dock = targets["home"]
+    ? { x: targets.home.x, y: targets.home.y, yaw: targets.home.yaw ?? 0, dock_after: true }
+    : { x: -0.89, y: -0.66, yaw: 0, dock_after: true };
 
   // 순회 문진 정차 리스트 — 타겟 좌표 + /rooms 키(배정환자).
   const roundStops: RoundStop[] = ROUND_MAP.flatMap((m) => {
@@ -128,7 +125,7 @@ export default function Home() {
         >
           <div>
             <div className="text-[20px] font-bold">순회 문진 시작</div>
-            <div className="text-[13px] text-white/80 mt-1">robot3 · 101호 1·2번을 순회하며 환자 QR 인식 후 문진을 진행합니다</div>
+            <div className="text-[13px] text-white/80 mt-1">robot3 · 101호 1·2번, 102호 1번을 순회하며 환자 QR 인식 후 문진을 진행합니다</div>
           </div>
           <span className="text-[26px]">▶</span>
         </button>
@@ -137,7 +134,7 @@ export default function Home() {
           className="w-full rounded-2xl px-7 py-6 mb-6 text-white shadow-md flex items-center justify-between gap-4"
           style={{ background: "linear-gradient(90deg,#6d5ae0,#4b3bbd)" }}
         >
-          <div className="text-[15px] font-semibold">순회 문진을 시작할까요? (101호 1·2번 순회 후 복귀·도킹)</div>
+          <div className="text-[15px] font-semibold">순회 문진을 시작할까요? (101호 1·2번 → 102호 1번 순회 후 홈 복귀·도킹)</div>
           <div className="flex gap-2 shrink-0">
             <button onClick={() => { setRoundsConfirm(false); setRoundsActive(true); }}
               className="px-5 py-2.5 rounded-xl bg-white text-[#4b3bbd] font-semibold">확인</button>
