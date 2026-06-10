@@ -27,7 +27,7 @@ IDLE, GOTO_STOP, WAIT_INTAKE, GOTO_HOME, DONE, FAILED = (
 PATROL_INTAKE_ACTION = 'patrol_intake_mission'
 
 # 홈(도킹 스테이션) 위치 — patrol_mode_node DEFAULT_TARGETS 'Docking Station' 동일
-_DEFAULT_HOME = {'x': -0.350975, 'y': -1.10605, 'yaw': 0.00228335, 'dock_after': True}
+_DEFAULT_HOME = {'x': -0.41441398221214687, 'y': -1.1834801683713334, 'yaw': 0.29826762982476646, 'dock_after': True}
 
 
 def _now_ms():
