@@ -225,6 +225,20 @@ export async function setIntakeStatus(pid: string, status: "done" | "absent") {
   return r.json();
 }
 
+// 순회 문진(하이브리드) 도착 상태 폴링. phase: 'idle' | 'arrived', stop: 도착 병상.
+export type PatrolPhase = { phase: "idle" | "arrived"; stop: { idx?: number; room?: string; ts?: number } };
+export const getPatrolPhase = () => getJSON<PatrolPhase>("/api/patrol/phase");
+
+// 문진(또는 부재중) 완료 → 로봇이 다음 병상으로 진행하도록 신호.
+export async function sendIntakeDone(): Promise<{ ok: boolean }> {
+  const r = await fetch(`${API_BASE}/api/patrol/intake_done`, {
+    method: "POST", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  return r.json();
+}
+
 
 export async function verifyInjection(
   pid: string,

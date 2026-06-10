@@ -136,7 +136,8 @@ ROBOT_NAMESPACES = ("robot3", "robot6")
 MISSION_ACTIONS = ("shutdown", "reboot", "ros_restart", "dock", "undock")   # 시스템(momentary)
 MODE_ACTIONS = ("start", "stop", "clear")                                   # 모드 중재(continuous)
 MODE_NAMES = ("round", "patrol", "errand", "guide", "intake")               # mission_manager 모드
-SEQUENCE_ACTIONS = ("patrol_mission", "nurse_cart_mission")                 # 시나리오 시퀀서
+SEQUENCE_ACTIONS = ("patrol_mission", "nurse_cart_mission",
+                    "patrol_intake_mission")                                # 시나리오 시퀀서
 
 
 def valid_robot_ns(ns):
@@ -484,6 +485,29 @@ def set_round_done(ns: str = "robot6"):
     nurse_cart_sequencer 가 WAIT_ROUND_DONE → GOTO_HOME → DOCK 으로 전이한다.
     """
     _init().reference(f"{ns}/nurse_cart/round_done").set(True)
+
+
+# ── 순회 문진(시나리오 A 하이브리드) 신호 — 기본 ns 는 PRIMARY_NS(robot3) ──────────
+def get_patrol_phase(ns: str = PRIMARY_NS) -> dict:
+    """RTDB /{ns}/patrol 의 {phase, stop} 반환. phase 없으면 'idle'.
+
+    phase: 'idle' | 'arrived'.  stop: {'idx','room','ts'} (도착한 병상).
+    웹 RoundsIntakeOverlay 가 폴링해 도착 시 QR/문진 단계로 전이한다.
+    """
+    node = _init().reference(f"{ns}/patrol").get() or {}
+    if not isinstance(node, dict):
+        node = {}
+    return {"phase": str(node.get("phase") or "idle"),
+            "stop": node.get("stop") or {}}
+
+
+def set_patrol_intake_done(ns: str = PRIMARY_NS):
+    """문진(또는 부재중) 완료 신호 — RTDB /{ns}/patrol/intake_done=true 기록.
+
+    db_node 가 이 값을 감지해 ROS topic /{ns}/patrol/intake_done 을 발행하고,
+    patrol_intake_sequencer 가 WAIT_INTAKE → 다음 병상(또는 홈 복귀) 으로 전이한다.
+    """
+    _init().reference(f"{ns}/patrol/intake_done").set(True)
 
 
 def set_display_patient(pid: str):

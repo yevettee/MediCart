@@ -18,6 +18,7 @@ ACTION_TIMEOUTS = {
     "shutdown": 60.0,
     "patrol_mission": 900.0,
     "nurse_cart_mission": 3600.0,  # 간호사 카트: undock→약품실→OCR 대기→복귀 전체
+    "patrol_intake_mission": 3600.0,  # 순회 문진: undock→병상 순회+문진 대기→복귀 전체
 }
 DEFAULT_TIMEOUT = 90.0
 

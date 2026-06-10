@@ -282,6 +282,27 @@ def nurse_cart_round_done():
     return jsonify({"ok": True})
 
 
+# ── 순회 문진(시나리오 A 하이브리드) ─────────────────────────────────────────
+@app.get("/api/patrol/phase")
+def patrol_phase():
+    """순회 문진 도착 상태 조회 — 웹 RoundsIntakeOverlay 폴링용. {phase, stop} 반환."""
+    return jsonify(fb_read.get_patrol_phase())
+
+
+@app.post("/api/patrol/intake_done")
+def patrol_intake_done():
+    """문진(또는 부재중) 완료 신호 — staff 이상 필요. 병상 문진 종료 시 호출.
+
+    RTDB robot3/patrol/intake_done=true 를 기록하면 db_node 가 감지해
+    patrol_intake_sequencer 를 WAIT_INTAKE → 다음 병상(또는 홈 복귀) 으로 전이시킨다.
+    """
+    try:
+        fb_read.set_patrol_intake_done()
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True})
+
+
 @app.post("/api/display/current")
 def display_set():
     body = request.get_json(force=True, silent=True) or {}
