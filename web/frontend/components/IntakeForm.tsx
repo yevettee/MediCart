@@ -2,10 +2,13 @@
 import { useState } from "react";
 import { addVisit } from "@/lib/api";
 
-type Field =
-  | { id: string; label: string; type: "text" | "textarea" | "number" | "date" }
-  | { id: string; label: string; type: "select" | "radio"; options: string[] }
-  | { id: string; label: string; type: "scale"; max: number };
+type Base = { id: string; label: string; wide?: boolean };
+type Field = Base & (
+  | { type: "text" | "textarea" | "date" }
+  | { type: "select" | "radio"; options: string[]; allowOther?: boolean }
+  | { type: "scale"; max: number }
+  | { type: "slider"; min: number; max: number; step?: number; unit?: string }
+);
 
 export const SECTIONS: { n: string; title: string; fields: Field[] }[] = [
   { n: "01", title: "내원 정보", fields: [
@@ -16,30 +19,43 @@ export const SECTIONS: { n: string; title: string; fields: Field[] }[] = [
       "소아청소년과", "산부인과", "정신건강의학과", "피부과", "안과", "이비인후과",
       "비뇨의학과", "가정의학과", "응급의학과", "재활의학과", "마취통증의학과",
       "영상의학과", "진단검사의학과",
-    ] },
+    ], allowOther: true },
   ]},
   { n: "02", title: "주요 증상", fields: [
-    { id: "주호소(CC)", label: "주요 증상 / 내원 사유", type: "textarea" },
-    { id: "증상 발생시기_경과", label: "증상 발생시기 / 경과", type: "text" },
-    { id: "통증부위", label: "통증 부위", type: "text" },
+    { id: "주호소(CC)", label: "주요 증상 / 내원 사유", type: "select", wide: true, allowOther: true, options: [
+      "발열", "기침", "가래", "인후통", "콧물/코막힘", "두통", "어지러움", "흉통", "호흡곤란",
+      "복통", "오심/구토", "설사", "변비", "배뇨통", "요통", "관절통", "근육통",
+      "피로/무기력", "불면", "실신/어지럼", "고혈압 관리", "당뇨 관리", "상처/욕창 관리",
+    ] },
+    { id: "증상 발생시기_경과", label: "증상 발생시기 / 경과", type: "select", allowOther: true, options: [
+      "오늘", "1~3일 전", "4~7일 전", "1~2주 전", "2주~1개월", "1개월 이상", "수개월 이상",
+    ] },
+    { id: "통증부위", label: "통증 부위", type: "select", allowOther: true, options: [
+      "없음", "머리", "눈/귀/코/목", "가슴", "복부", "등/허리", "어깨/팔", "엉덩이/다리", "관절", "전신",
+    ] },
     { id: "통증점수", label: "통증 점수 (0~10)", type: "scale", max: 10 },
   ]},
   { n: "03", title: "생체징후", fields: [
-    { id: "수축기혈압", label: "수축기혈압 (mmHg)", type: "number" },
-    { id: "이완기혈압", label: "이완기혈압 (mmHg)", type: "number" },
-    { id: "맥박", label: "맥박 (bpm)", type: "number" },
-    { id: "호흡", label: "호흡 (/min)", type: "number" },
-    { id: "체온", label: "체온 (℃)", type: "number" },
-    { id: "SpO2", label: "SpO₂ (%)", type: "number" },
+    { id: "수축기혈압", label: "수축기혈압", type: "slider", min: 70, max: 220, unit: "mmHg" },
+    { id: "이완기혈압", label: "이완기혈압", type: "slider", min: 40, max: 140, unit: "mmHg" },
+    { id: "맥박", label: "맥박", type: "slider", min: 30, max: 200, unit: "bpm" },
+    { id: "호흡", label: "호흡", type: "slider", min: 5, max: 50, unit: "/min" },
+    { id: "체온", label: "체온", type: "slider", min: 34, max: 42, step: 0.1, unit: "℃" },
+    { id: "SpO2", label: "SpO₂", type: "slider", min: 70, max: 100, unit: "%" },
     { id: "의식상태", label: "의식상태", type: "select", options: ["명료", "기면", "혼미", "반혼수", "혼수"] },
     { id: "낙상위험", label: "낙상위험", type: "select", options: ["하", "중", "고"] },
   ]},
   { n: "04", title: "간호 / 기타", fields: [
     { id: "금일 복약 여부", label: "금일 복약 여부", type: "select", options: ["복용", "미복용", "해당없음"] },
-    { id: "최근 발열_감염노출", label: "최근 발열 / 감염 노출", type: "text" },
+    { id: "최근 발열_감염노출", label: "최근 발열 / 감염 노출", type: "select", allowOther: true, options: [
+      "없음", "최근 발열 있음", "감염 노출력 있음", "최근 해외여행력", "호흡기 증상자 접촉", "미상",
+    ] },
     { id: "최근 검사_예정 검사", label: "최근 / 예정 검사", type: "date" },
     { id: "보고 필요", label: "의료진 보고 필요", type: "select", options: ["예", "아니오"] },
-    { id: "간호 관찰사항", label: "간호 관찰사항", type: "textarea" },
+    { id: "간호 관찰사항", label: "간호 관찰사항", type: "select", wide: true, allowOther: true, options: [
+      "특이사항 없음", "활력징후 안정", "통증 호소", "호흡곤란 호소", "의식 저하", "낙상 주의 필요",
+      "상처 부위 관찰 필요", "수액/약물 투여 중", "금식 중", "보호자 동반",
+    ] },
     { id: "작성 간호사", label: "작성 간호사", type: "text" },
   ]},
 ];
@@ -49,30 +65,42 @@ export const INTAKE_SECTIONS = SECTIONS;
 
 export const today = () => new Date().toISOString().slice(0, 10);
 
+// 드롭다운 + "기타(직접 입력)" — 기타 선택 시 자유 입력칸으로 전환.
+function ChoiceField(
+  { f, value, set }: { f: Extract<Field, { type: "select" | "radio" }>; value: unknown; set: (id: string, v: unknown) => void },
+) {
+  const v = (value as string) ?? "";
+  const inOpts = f.options.includes(v);
+  const [other, setOther] = useState<boolean>(!!f.allowOther && v !== "" && !inOpts);
+  const selVal = other ? "__other__" : inOpts ? v : "";
+  return (
+    <div className="flex flex-col gap-2">
+      <select className="field" value={selVal} onChange={(e) => {
+        const x = e.target.value;
+        if (x === "__other__") { setOther(true); set(f.id, ""); }
+        else { setOther(false); set(f.id, x); }
+      }}>
+        <option value="">선택</option>
+        {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+        {f.allowOther && <option value="__other__">기타 (직접 입력)</option>}
+      </select>
+      {other && (
+        <input className="field" autoFocus placeholder="직접 입력" value={v}
+          onChange={(e) => set(f.id, e.target.value)} />
+      )}
+    </div>
+  );
+}
+
 export function FieldInput(
   { f, value, set }: { f: Field; value: unknown; set: (id: string, v: unknown) => void },
 ) {
-  if (f.type === "text" || f.type === "number" || f.type === "date")
+  if (f.type === "text" || f.type === "date")
     return <input className="field" type={f.type} value={(value as string) ?? ""} onChange={(e) => set(f.id, e.target.value)} />;
   if (f.type === "textarea")
     return <textarea className="field min-h-[78px] resize-y" value={(value as string) ?? ""} onChange={(e) => set(f.id, e.target.value)} />;
-  if (f.type === "select")
-    return (
-      <select className="field" value={(value as string) ?? ""} onChange={(e) => set(f.id, e.target.value)}>
-        <option value="">선택</option>
-        {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
-      </select>
-    );
-  if (f.type === "radio")
-    return (
-      <div className="flex flex-wrap gap-2">
-        {f.options.map((o) => {
-          const on = value === o;
-          return <button key={o} type="button" onClick={() => set(f.id, o)}
-            className={`px-3.5 py-1.5 rounded-lg text-[13px] font-medium border transition-colors ${on ? "bg-teal text-white border-teal" : "bg-surface-2 text-ink-2 border-line hover:border-teal"}`}>{o}</button>;
-        })}
-      </div>
-    );
+  if (f.type === "select" || f.type === "radio")
+    return <ChoiceField f={f} value={value} set={set} />;
   if (f.type === "scale") {
     const cur = Number(value ?? -1);
     return (
@@ -81,6 +109,20 @@ export function FieldInput(
           <button key={i} type="button" onClick={() => set(f.id, String(i))}
             className={`w-8 h-8 rounded-lg mono text-[13px] font-semibold border transition-colors ${cur === i ? "bg-teal text-white border-teal" : "bg-surface-2 text-ink-2 border-line hover:border-teal"}`}>{i}</button>
         ))}
+      </div>
+    );
+  }
+  if (f.type === "slider") {
+    const has = value !== undefined && value !== null && value !== "";
+    const num = has ? Number(value) : f.min;
+    return (
+      <div className="flex items-center gap-3">
+        <input type="range" min={f.min} max={f.max} step={f.step ?? 1} value={num}
+          onChange={(e) => set(f.id, e.target.value)} className="flex-1 accent-teal cursor-pointer" />
+        <input type="number" min={f.min} max={f.max} step={f.step ?? 1}
+          className="field w-[74px] text-center mono" value={has ? (value as string) : ""}
+          placeholder="—" onChange={(e) => set(f.id, e.target.value)} />
+        {f.unit && <span className="text-[11.5px] text-ink-3 w-9 shrink-0">{f.unit}</span>}
       </div>
     );
   }
@@ -101,7 +143,7 @@ export function IntakeFields(
           </div>
           <div className="grid grid-cols-2 gap-x-5 gap-y-4">
             {sec.fields.map((f) => (
-              <div key={f.id} className={f.type === "textarea" ? "col-span-2" : ""}>
+              <div key={f.id} className={f.wide ? "col-span-2" : ""}>
                 <label className="block text-[12.5px] font-semibold text-ink-2 mb-1.5">{f.label}</label>
                 <FieldInput f={f} value={form[f.id]} set={set} />
               </div>
@@ -159,7 +201,7 @@ export default function IntakeForm({ pid, patientName, prefillDept, onSaved, onC
               </div>
               <div className="grid grid-cols-2 gap-x-5 gap-y-3.5">
                 {sec.fields.map((f) => (
-                  <div key={f.id} className={f.type === "textarea" ? "col-span-2" : ""}>
+                  <div key={f.id} className={f.wide ? "col-span-2" : ""}>
                     <label className="block text-[12.5px] font-semibold text-ink-2 mb-1.5">{f.label}</label>
                     <FieldInput f={f} value={form[f.id]} set={set} />
                   </div>
