@@ -5,6 +5,7 @@ import {
   nurseCartOcrDone, nurseCartRoundDone, getNurseCartPhase,
   type Patient, type Injection, type NurseCartPhase,
 } from "@/lib/api";
+import { NURSE_CART_NS } from "@/lib/config";
 import { decideQr } from "@/lib/ocrQr";
 
 const PID_RE = /^P-\d{4}-\d{4}$/;
@@ -271,7 +272,7 @@ export default function OcrPage() {
   /* 로봇 단계 폴링 (idle|arrived|tracking|done) */
   useEffect(() => {
     let alive = true;
-    const tick = () => getNurseCartPhase()
+    const tick = () => getNurseCartPhase(NURSE_CART_NS)
       .then((r) => { if (alive) setPhase(r.phase); })
       .catch(() => {});
     tick();
@@ -283,7 +284,7 @@ export default function OcrPage() {
   async function handleDone() {
     setDoneSending(true); setDoneMsg("");
     try {
-      await nurseCartOcrDone();
+      await nurseCartOcrDone(NURSE_CART_NS);
       setDoneMsg("OCR 완료 전송됨 — 로봇이 입구로 이동 후 추종을 시작합니다.");
     } catch (e) {
       setDoneMsg("전송 실패: " + String(e));
@@ -296,7 +297,7 @@ export default function OcrPage() {
   async function handleRoundDone() {
     setRoundSending(true); setDoneMsg("");
     try {
-      await nurseCartRoundDone();
+      await nurseCartRoundDone(NURSE_CART_NS);
       setDoneMsg("회진 종료 전송됨 — 로봇이 홈으로 복귀해 도킹합니다.");
     } catch (e) {
       setDoneMsg("전송 실패: " + String(e));

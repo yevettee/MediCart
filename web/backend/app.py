@@ -383,12 +383,20 @@ def api_ocr():
 
 
 # ── 시나리오 B — 간호사 카트 (nurse_cart) 트리거 ──────────────────────────────
+def _req_ns():
+    """요청에서 대상 로봇 ns 추출 (GET=쿼리, POST=body). 유효하지 않으면 PRIMARY_NS.
+    간호사 투약=robot6, 순회 문진=robot3 처럼 모드별 전담 로봇을 프론트가 지정한다."""
+    src = request.args if request.method == "GET" else (request.get_json(force=True, silent=True) or {})
+    ns = str(src.get("ns") or "").strip()
+    return ns if fb_read.valid_robot_ns(ns) else fb_read.PRIMARY_NS
+
+
 @app.post("/api/missions")
 def create_mission():
-    """미션 시작 (admin) — '카트 출발' 등. body {action} → PRIMARY_NS mission_pool."""
+    """미션 시작 (admin) — '카트 출발' 등. body {action[, ns]} → mission_pool."""
     body = request.get_json(force=True, silent=True) or {}
     try:
-        mid, mission = fb_read.push_mission(fb_read.PRIMARY_NS, body.get("action"))
+        mid, mission = fb_read.push_mission(_req_ns(), body.get("action"))
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     return jsonify({"ok": True, "id": mid, "mission": mission})
@@ -397,16 +405,16 @@ def create_mission():
 @app.post("/api/nurse_cart/ocr_done")
 def nurse_cart_ocr_done():
     """OCR 완료 (staff) → {ns}/nurse_cart/ocr_done = true. 로봇: 입구 이동 후 추종 시작."""
-    fb_read.set_ocr_done(fb_read.PRIMARY_NS, True)
+    fb_read.set_ocr_done(_req_ns(), True)
     return jsonify({"ok": True})
 
 
 @app.post("/api/nurse_cart/start")
 def nurse_cart_start():
-    """회진 시작 (staff) — nurse_cart_mission push. 약품실→OCR→추종→홈 복귀·도킹.
-    /api/missions(admin)와 달리 action 이 nurse_cart_mission 으로 고정돼 staff 에 안전."""
+    """간호사 투약 시작 (staff) — nurse_cart_mission push. 약품실→OCR→추종→홈 복귀·도킹.
+    body {ns}(기본 robot6). /api/missions(admin)와 달리 action 고정돼 staff 에 안전."""
     try:
-        mid, _ = fb_read.push_mission(fb_read.PRIMARY_NS, "nurse_cart_mission")
+        mid, _ = fb_read.push_mission(_req_ns(), "nurse_cart_mission")
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     return jsonify({"ok": True, "id": mid})
@@ -415,14 +423,14 @@ def nurse_cart_start():
 @app.post("/api/nurse_cart/round_done")
 def nurse_cart_round_done():
     """회진 종료 (staff) → {ns}/nurse_cart/round_done = true. 로봇: 추종 중지·홈 도킹."""
-    fb_read.set_round_done(fb_read.PRIMARY_NS, True)
+    fb_read.set_round_done(_req_ns(), True)
     return jsonify({"ok": True})
 
 
 @app.get("/api/nurse_cart/phase")
 def nurse_cart_phase():
-    """로봇 현재 단계 (공개). idle | arrived | tracking | done."""
-    return jsonify({"phase": fb_read.get_nurse_cart_phase(fb_read.PRIMARY_NS)})
+    """로봇 현재 단계 (공개) — query ?ns=. idle | arrived | tracking | done."""
+    return jsonify({"phase": fb_read.get_nurse_cart_phase(_req_ns())})
 
 
 # ── 로봇 명령 하달 (mission_pool, ROS 노드 통신 없음) ─────────────────────────
@@ -473,15 +481,15 @@ def patrol_intake_done():
 # ── 순회 문진 하이브리드 핸드셰이크 (로봇 정차↔웹) ─────────────────────────────
 @app.get("/api/patrol/phase")
 def patrol_phase():
-    """로봇 도착 상태 조회 — 웹 PatrolIntakeOverlay 폴링용. {phase, stop} 반환."""
-    return jsonify(fb_read.get_patrol_phase())
+    """로봇 도착 상태 조회 — 웹 순회 문진 오버레이 폴링용 (query ?ns=, 기본 robot3). {phase, stop}."""
+    return jsonify(fb_read.get_patrol_phase(_req_ns()))
 
 
 @app.post("/api/patrol/advance")
 def patrol_advance():
-    """정차 종료 신호 — 로봇이 다음 병상(또는 복귀)으로 진행하도록 핸드셰이크."""
+    """정차 종료 신호 — 로봇이 다음 병상(또는 복귀)으로 진행하도록 핸드셰이크. body {ns}."""
     try:
-        fb_read.set_patrol_advance()
+        fb_read.set_patrol_advance(_req_ns())
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
     return jsonify({"ok": True})
@@ -517,4 +525,11 @@ except Exception as exc:        # noqa: BLE001 — 시드 실패해도 서비스
     print(f"[app] targets 시드 건너뜀: {exc}")
 
 if __name__ == "__main__":
+    # web-restart(서버 기동) 시 모든 로봇의 mission_pool 초기화 — 묵은 미션 제거.
+    for _ns in fb_read.ROBOT_NAMESPACES:
+        try:
+            fb_read.clear_missions(_ns)
+            print(f"[app] {_ns}/mission_pool 초기화")
+        except Exception as exc:        # noqa: BLE001 — 초기화 실패해도 기동은 계속
+            print(f"[app] {_ns}/mission_pool 초기화 건너뜀: {exc}")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), threaded=True)

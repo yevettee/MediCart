@@ -90,7 +90,7 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
     if (!active) return;
     const poll = async () => {
       try {
-        const p = await getPatrolPhase();
+        const p = await getPatrolPhase(ns);
         if (phaseRef.current === "returning") {
           if (p.phase === "idle") setPhase("summary");
           return;
@@ -158,7 +158,7 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
   const finishStop = useCallback(() => {
     if (advancingRef.current) return;
     advancingRef.current = true;
-    sendPatrolAdvance().catch(() => {});
+    sendPatrolAdvance(ns).catch(() => {});
     if (lastArrivedRef.current + 1 >= stops.length) setPhase("returning");
     else setPhase("moving");          // 다음 도착 신호 대기
   }, [stops.length]);
