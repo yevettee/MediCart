@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { API_BASE, AmrSnapshot, getAmrs, getRooms, saveMode, getMapMeta, MapMeta, pushMission } from "@/lib/api";
+import { API_BASE, AmrSnapshot, getAmrs, getRooms, saveMode, getMapMeta, MapMeta, pushMission, getTargets, GotoTarget } from "@/lib/api";
 import { modeOf } from "@/lib/modes";
 import { PRIMARY_NS, SECONDARY_NS } from "@/lib/config";
+import { robotHome } from "@/lib/telemetry";
 
 type Rooms = { rooms?: Record<string, { x: number; y: number; yaw?: number; patient?: string }> };
 const AMR_COLOR: Record<string, string> = { robot3: "#0ca39a", robot6: "#2f74e0" };
@@ -16,6 +17,7 @@ export default function MapView({ embedded = false, ns: nsProp, amrs: amrsProp, 
   const [amrsState, setAmrs] = useState<Record<string, AmrSnapshot>>({});
   const amrs = amrsProp ?? amrsState;       // controlled(콘솔) 우선, 아니면 자체 수신
   const [rooms, setRooms] = useState<Rooms>({});
+  const [targets, setTargets] = useState<Record<string, GotoTarget>>({});
   const [mapMeta, setMapMeta] = useState<MapMeta>({ available: false });
   const mapImg = useRef<HTMLImageElement | null>(null);
   const [mapReady, setMapReady] = useState(0); // 이미지 로드 트리거(리렌더)
@@ -30,6 +32,7 @@ export default function MapView({ embedded = false, ns: nsProp, amrs: amrsProp, 
   // 초기 fetch + (단독 모드일 때만) 자체 SSE. amrs 를 외부에서 받으면 스트림은 콘솔이 소유.
   useEffect(() => {
     getRooms().then(setRooms).catch(() => {});
+    getTargets().then((r) => setTargets(r.targets || {})).catch(() => {});
     getMapMeta().then((m) => {
       setMapMeta(m);
       if (m.available) {
@@ -107,6 +110,29 @@ export default function MapView({ embedded = false, ns: nsProp, amrs: amrsProp, 
       ctx.fillText(name, px, py + 3.5);
     });
 
+    // targets 오버레이 (침상·약품실·호실) — "dock" 키는 로봇별 마커로 별도 처리
+    Object.entries(targets).forEach(([key, t]) => {
+      if (key === "dock") return;
+      const px = X(t.x), py = Y(t.y);
+      ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff4e6"; ctx.strokeStyle = "#f0b274"; ctx.lineWidth = 1.5;
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#b9772e"; ctx.font = "600 10px 'Pretendard Variable'"; ctx.textAlign = "center";
+      ctx.fillText(t.label || key, px, py - 10);
+    });
+
+    // 로봇별 홈/도크 마커 — 도킹 중인 로봇의 pose(=amcl_pose)에서 도출
+    Object.entries(amrs).forEach(([src, a]) => {
+      const home = robotHome(a);
+      if (!home) return;
+      const px = X(home.x), py = Y(home.y);
+      const col = AMR_COLOR[src] || "#0ca39a";
+      roundRect(ctx, px - 7, py - 7, 14, 14, 3);
+      ctx.fillStyle = "#fff"; ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.fill(); ctx.stroke();
+      ctx.fillStyle = col; ctx.font = "600 9px 'Pretendard Variable'"; ctx.textAlign = "center";
+      ctx.fillText(`${src} home`, px, py + 18);
+    });
+
     // AMR 마커 (+ LiDAR + 헤딩)
     Object.entries(amrs).forEach(([src, a]) => {
       if (!a?.pose) return;
@@ -131,7 +157,7 @@ export default function MapView({ embedded = false, ns: nsProp, amrs: amrsProp, 
       ctx.fillStyle = col; ctx.fill();
       ctx.lineWidth = 3; ctx.strokeStyle = "#fff"; ctx.stroke();
     });
-  }, [amrs, rooms, mapMeta, mapReady]);
+  }, [amrs, rooms, targets, mapMeta, mapReady]);
 
   const sources = Object.keys(amrs).length ? Object.keys(amrs) : [PRIMARY_NS, SECONDARY_NS];
 
