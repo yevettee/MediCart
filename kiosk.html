@@ -35,7 +35,7 @@
       .h-logo { font-size: 18px; }
       .h-logo-sub { display: none; }
       .h-clock { display: none; }
-      .lang-btn { font-size: 13px; padding: 1px 5px; }
+      .lang-btn { font-size: 12px; padding: 1px 5px; }
     }
     .h-clock { font-size: 14px; color: rgba(255,255,255,.75); }
     .h-staff-link {
@@ -48,8 +48,8 @@
     .lang-sel { display:flex; gap:3px; }
     .lang-btn {
       background:transparent; border:1.5px solid rgba(255,255,255,.3);
-      border-radius:6px; font-size:15px; padding:2px 7px;
-      cursor:pointer; transition:.15s; line-height:1.3;
+      border-radius:6px; font-size:13px; font-weight:700; padding:2px 8px;
+      cursor:pointer; transition:.15s; line-height:1.4; color:#fff; letter-spacing:.03em;
     }
     .lang-btn:hover { background:rgba(255,255,255,.15); }
     .lang-btn.active { background:rgba(255,255,255,.2); border-color:#fff; }
@@ -76,7 +76,8 @@
     .status-main { font-size: 18px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
     .status-sub  { font-size: 13px; color: var(--muted); }
     .mode-badge {
-      display: inline-block; margin-top: 8px; padding: 3px 12px;
+      display: inline-flex; align-items: center; gap: 5px;
+      margin-top: 8px; padding: 3px 12px;
       border-radius: 99px; font-size: 12px; font-weight: 700;
     }
     .mode-badge.ai    { background: var(--blue-l);   color: var(--blue); }
@@ -92,7 +93,7 @@
 
     .bubble-row { display:flex; gap:8px; align-items:flex-end; }
     .bubble-row.user { flex-direction:row-reverse; }
-    .bav { width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; background:var(--blue-l); }
+    .bav { width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0; background:var(--blue-l); }
     .bubble-row.user .bav { background:#e0f2fe; }
     .bubble { max-width:78%; padding:9px 13px; border-radius:14px; font-size:14px; line-height:1.55; }
     .bubble-row.bot      .bubble { background:var(--blue-l); color:var(--text); border-bottom-left-radius:4px; }
@@ -111,6 +112,7 @@
     .mode-tab {
       flex:1; padding:8px; border:none; border-radius:8px; font-size:13px; font-weight:600;
       cursor:pointer; transition:.18s; background:transparent; color:var(--muted);
+      display:flex; align-items:center; justify-content:center; gap:5px;
     }
     .mode-tab.active-ai    { background:var(--blue);   color:#fff; }
     .mode-tab.active-staff { background:var(--orange); color:#fff; }
@@ -131,7 +133,11 @@
     @keyframes micpulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)}50%{box-shadow:0 0 0 10px rgba(239,68,68,0)}}
 
     .quick-btns { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
-    .qbtn { padding:5px 12px; border-radius:99px; border:1.5px solid var(--border); background:var(--card); font-size:12px; cursor:pointer; color:var(--text); transition:.18s; }
+    .qbtn {
+      display:inline-flex; align-items:center; gap:5px;
+      padding:5px 12px; border-radius:99px; border:1.5px solid var(--border);
+      background:var(--card); font-size:12px; cursor:pointer; color:var(--text); transition:.18s;
+    }
     .qbtn:hover { border-color:var(--blue); color:var(--blue); background:var(--blue-l); }
 
     .tts-row { display:flex; align-items:center; justify-content:flex-end; gap:7px; font-size:12px; color:var(--muted); flex-wrap:wrap; }
@@ -147,7 +153,7 @@
       display:flex; flex-direction:column; align-items:center; gap:6px;
       font-size:13px; font-weight:700; transition:.18s;
     }
-    .call-btn .icon { font-size:26px; }
+    .call-btn .icon { display:flex; align-items:center; justify-content:center; }
     .call-btn.robot   { background:#ede9fe; color:#7c3aed; }
     .call-btn.robot:hover  { background:#ddd6fe; }
     .call-btn.nurse   { background:var(--red-l);   color:var(--red); }
@@ -159,7 +165,7 @@
     .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:200; display:none; align-items:center; justify-content:center; padding:20px; }
     .modal-bg.open { display:flex; }
     .modal { background:#fff; border-radius:18px; padding:24px; width:100%; max-width:480px; }
-    .modal-title { font-size:18px; font-weight:800; margin-bottom:16px; }
+    .modal-title { font-size:18px; font-weight:800; margin-bottom:16px; display:flex; align-items:center; gap:7px; }
     .modal textarea {
       width:100%; height:120px; border:1.5px solid var(--border); border-radius:10px;
       padding:12px; font-size:14px; font-family:inherit; resize:none;
@@ -172,8 +178,16 @@
       background:var(--orange-l); border:1px solid #fed7aa;
       border-radius:10px; padding:10px 14px; font-size:13px; color:#9a3412;
       display:none; margin-bottom:10px; text-align:center;
+      align-items:center; justify-content:center; gap:6px;
     }
-    .staff-waiting.show { display:block; }
+    .staff-waiting.show { display:flex; }
+
+    /* Lucide icon sizing */
+    .lucide { display:inline-block; vertical-align:-0.15em; }
+    .li-xs  { width:13px; height:13px; }
+    .li-sm  { width:16px; height:16px; }
+    .li-md  { width:20px; height:20px; }
+    .li-xl  { width:26px; height:26px; }
   </style>
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#2563eb" />
@@ -181,6 +195,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="MedQR 안내" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <script src="lucide.min.js"></script>
 </head>
 <body>
 
@@ -188,10 +203,10 @@
   <div class="h-logo"><span class="h-logo-name">두브란<span class="h-logo-accent">스</span></span><span class="h-logo-sub" id="h-title-text">병원 안내</span></div>
   <div class="h-right">
     <div class="lang-sel">
-      <button class="lang-btn active" onclick="setLanguage('ko')">🇰🇷</button>
-      <button class="lang-btn" onclick="setLanguage('en')">🇬🇧</button>
-      <button class="lang-btn" onclick="setLanguage('zh')">🇨🇳</button>
-      <button class="lang-btn" onclick="setLanguage('ja')">🇯🇵</button>
+      <button class="lang-btn active" onclick="setLanguage('ko')">KO</button>
+      <button class="lang-btn" onclick="setLanguage('en')">EN</button>
+      <button class="lang-btn" onclick="setLanguage('zh')">中</button>
+      <button class="lang-btn" onclick="setLanguage('ja')">日</button>
     </div>
     <div class="h-clock" id="clock">--:--</div>
     <a href="staff.html" target="_blank" class="h-staff-link">직원용 →</a>
@@ -204,38 +219,38 @@
     <div class="robot-face" id="robot-face"><img src="doovrance_logo.png" alt="두브란스 로고" /></div>
     <div class="status-main" id="status-main">무엇을 도와드릴까요?</div>
     <div class="status-sub"  id="status-sub">아래 버튼을 눌러 질문해주세요</div>
-    <div class="mode-badge ai" id="mode-badge">🤖 AI 답변 모드</div>
+    <div class="mode-badge ai" id="mode-badge"><i data-lucide="bot" class="li-sm"></i> AI 답변 모드</div>
   </div>
 
   <div class="chat-wrap" id="chat-wrap">
     <div class="chat-empty" id="chat-empty">
-      아직 대화가 없습니다.<br>질문을 입력하거나 말씀해주세요 😊
+      아직 대화가 없습니다.<br>질문을 입력하거나 말씀해주세요 <i data-lucide="smile" class="li-sm"></i>
     </div>
   </div>
 
   <div class="input-card">
     <div class="staff-waiting" id="staff-waiting">
-      ⏳ 직원 연결 대기 중… 잠시만 기다려주세요
+      <i data-lucide="hourglass" class="li-sm"></i> 직원 연결 대기 중… 잠시만 기다려주세요
     </div>
 
     <div class="mode-tabs">
-      <button class="mode-tab active-ai" id="tab-ai"    onclick="setMode('ai')">🤖 AI 답변</button>
-      <button class="mode-tab"           id="tab-staff" onclick="setMode('staff')">👩‍⚕️ 직원 연결</button>
+      <button class="mode-tab active-ai" id="tab-ai"    onclick="setMode('ai')"><i data-lucide="bot" class="li-sm"></i> AI 답변</button>
+      <button class="mode-tab"           id="tab-staff" onclick="setMode('staff')"><i data-lucide="stethoscope" class="li-sm"></i> 직원 연결</button>
     </div>
 
     <div class="text-row">
       <input type="text" class="text-input" id="text-input"
              placeholder="질문을 입력하세요…"
              onkeydown="if(event.key==='Enter') sendMessage()" />
-      <button class="btn btn-mic" id="btn-mic" onclick="toggleSTT()">🎤</button>
+      <button class="btn btn-mic" id="btn-mic" onclick="toggleSTT()"><i data-lucide="mic" class="li-md"></i></button>
       <button class="btn btn-blue" id="btn-send" onclick="sendMessage()">전송</button>
     </div>
 
     <div class="quick-btns">
-      <button class="qbtn" id="qbtn-reception" onclick="quickSend('Reception')">📋 접수처</button>
-      <button class="qbtn" id="qbtn-dept"      onclick="quickSend('Dept')">🏥 진료과</button>
-      <button class="qbtn" id="qbtn-hours"     onclick="quickSend('Hours')">🕐 운영시간</button>
-      <button class="qbtn" id="qbtn-toilet"    onclick="quickSend('Toilet')">🚻 화장실</button>
+      <button class="qbtn" id="qbtn-reception" onclick="quickSend('Reception')"><i data-lucide="clipboard-list" class="li-xs"></i> 접수처</button>
+      <button class="qbtn" id="qbtn-dept"      onclick="quickSend('Dept')"><i data-lucide="hospital" class="li-xs"></i> 진료과</button>
+      <button class="qbtn" id="qbtn-hours"     onclick="quickSend('Hours')"><i data-lucide="clock" class="li-xs"></i> 운영시간</button>
+      <button class="qbtn" id="qbtn-toilet"    onclick="quickSend('Toilet')"><i data-lucide="users" class="li-xs"></i> 화장실</button>
     </div>
 
     <div class="tts-row">
@@ -249,13 +264,13 @@
 
   <div class="bottom-bar">
     <button class="call-btn robot"  id="btn-robot" onclick="callRobot()">
-      <span class="icon">🤖</span><span id="label-robot">로봇 호출</span>
+      <span class="icon"><i data-lucide="bot" class="li-xl"></i></span><span id="label-robot">로봇 호출</span>
     </button>
     <button class="call-btn suggest" onclick="openSuggest()">
-      <span class="icon">📝</span><span id="label-suggest">건의함</span>
+      <span class="icon"><i data-lucide="file-pen" class="li-xl"></i></span><span id="label-suggest">건의함</span>
     </button>
     <button class="call-btn nurse"  id="btn-nurse" onclick="callNurse()">
-      <span class="icon">🔔</span><span id="label-nurse">간호사 호출</span>
+      <span class="icon"><i data-lucide="bell" class="li-xl"></i></span><span id="label-nurse">간호사 호출</span>
     </button>
   </div>
 
@@ -263,7 +278,7 @@
 
 <div class="modal-bg" id="suggest-modal">
   <div class="modal">
-    <div class="modal-title" id="modal-suggest-title">📝 건의함</div>
+    <div class="modal-title" id="modal-suggest-title"><i data-lucide="file-pen" class="li-sm"></i> 건의함</div>
     <textarea id="suggest-text" placeholder="불편하신 사항이나 건의사항을 자유롭게 작성해주세요."></textarea>
     <div class="modal-btns">
       <button class="btn btn-ghost" id="btn-cancel" onclick="closeSuggest()">취소</button>
@@ -338,97 +353,115 @@ If you don't know something, say "Please ask at the information desk."
 - 救急室：1階右側、24時間営業`,
 };
 
+const LI = (name, cls) => `<i data-lucide="${name}" class="${cls}"></i>`;
+
 const LANG_TEXT = {
   ko: {
     titleText:'병원 안내', statusMain:'무엇을 도와드릴까요?', statusSub:'아래 버튼을 눌러 질문해주세요',
-    chatEmpty:'아직 대화가 없습니다.<br>질문을 입력하거나 말씀해주세요 😊',
-    staffWaiting:'⏳ 직원 연결 대기 중… 잠시만 기다려주세요',
-    tabAI:'🤖 AI 답변', tabStaff:'👩‍⚕️ 직원 연결',
-    badgeAI:'🤖 AI 답변 모드', badgeStaff:'👩‍⚕️ 직원 연결 모드',
+    chatEmpty:`아직 대화가 없습니다.<br>질문을 입력하거나 말씀해주세요 ${LI('smile','li-sm')}`,
+    staffWaiting:`${LI('hourglass','li-sm')} 직원 연결 대기 중… 잠시만 기다려주세요`,
+    tabAI:`${LI('bot','li-sm')} AI 답변`, tabStaff:`${LI('stethoscope','li-sm')} 직원 연결`,
+    badgeAI:`${LI('bot','li-sm')} AI 답변 모드`, badgeStaff:`${LI('stethoscope','li-sm')} 직원 연결 모드`,
     placeholder:'질문을 입력하세요…', placeholderStaff:'직원에게 전달할 메시지를 입력하세요…',
     send:'전송',
-    quickReception:'📋 접수처', quickDept:'🏥 진료과', quickHours:'🕐 운영시간', quickToilet:'🚻 화장실',
+    quickReception:`${LI('clipboard-list','li-xs')} 접수처`,
+    quickDept:`${LI('hospital','li-xs')} 진료과`,
+    quickHours:`${LI('clock','li-xs')} 운영시간`,
+    quickToilet:`${LI('users','li-xs')} 화장실`,
     quickSendReception:'접수처가 어디에 있나요?', quickSendDept:'진료과 안내해주세요',
     quickSendHours:'운영시간이 어떻게 되나요?', quickSendToilet:'화장실이 어디에 있나요?',
     voiceLabel:'음성 응답', voiceDefault:'기본 목소리',
     btnRobot:'로봇 호출', btnSuggest:'건의함', btnNurse:'간호사 호출',
-    modalTitle:'📝 건의함', modalPlaceholder:'불편하신 사항이나 건의사항을 자유롭게 작성해주세요.',
+    modalTitle:`${LI('file-pen','li-sm')} 건의함`,
+    modalPlaceholder:'불편하신 사항이나 건의사항을 자유롭게 작성해주세요.',
     cancel:'취소', submit:'제출',
     staffConnected:'직원 연결 모드입니다. 메시지를 입력하시면 담당 직원에게 전달됩니다.',
-    robotCalled:'🤖 로봇을 호출했습니다. 잠시만 기다려주세요.',
+    robotCalled:'로봇을 호출했습니다. 잠시만 기다려주세요.',
     robotCalledSpeak:'로봇을 호출했습니다. 잠시만 기다려주세요.',
-    nurseCalled:'🔔 간호사를 호출했습니다. 잠시만 기다려주세요.',
+    nurseCalled:'간호사를 호출했습니다. 잠시만 기다려주세요.',
     nurseCalledSpeak:'간호사를 호출했습니다. 잠시만 기다려주세요.',
-    called:'호출됨', suggestDone:'건의사항이 접수되었습니다. 소중한 의견 감사합니다 😊',
+    called:'호출됨', suggestDone:'건의사항이 접수되었습니다. 소중한 의견 감사합니다.',
     thinking:'답변 중…', errPrefix:'오류: ', sttLang:'ko-KR', ttsLang:'ko-KR',
   },
   en: {
     titleText:'Hospital Guide', statusMain:'How can I help you?', statusSub:'Tap a button below to ask',
-    chatEmpty:'No messages yet.<br>Type or speak your question 😊',
-    staffWaiting:'⏳ Connecting to staff… Please wait',
-    tabAI:'🤖 AI Answer', tabStaff:'👩‍⚕️ Staff',
-    badgeAI:'🤖 AI Mode', badgeStaff:'👩‍⚕️ Staff Mode',
+    chatEmpty:`No messages yet.<br>Type or speak your question ${LI('smile','li-sm')}`,
+    staffWaiting:`${LI('hourglass','li-sm')} Connecting to staff… Please wait`,
+    tabAI:`${LI('bot','li-sm')} AI Answer`, tabStaff:`${LI('stethoscope','li-sm')} Staff`,
+    badgeAI:`${LI('bot','li-sm')} AI Mode`, badgeStaff:`${LI('stethoscope','li-sm')} Staff Mode`,
     placeholder:'Type your question…', placeholderStaff:'Enter message for staff…',
     send:'Send',
-    quickReception:'📋 Reception', quickDept:'🏥 Departments', quickHours:'🕐 Hours', quickToilet:'🚻 Restroom',
+    quickReception:`${LI('clipboard-list','li-xs')} Reception`,
+    quickDept:`${LI('hospital','li-xs')} Departments`,
+    quickHours:`${LI('clock','li-xs')} Hours`,
+    quickToilet:`${LI('users','li-xs')} Restroom`,
     quickSendReception:'Where is the reception?', quickSendDept:'Tell me about the departments',
     quickSendHours:'What are the operating hours?', quickSendToilet:'Where is the restroom?',
     voiceLabel:'Voice', voiceDefault:'Default voice',
     btnRobot:'Call Robot', btnSuggest:'Feedback', btnNurse:'Call Nurse',
-    modalTitle:'📝 Feedback', modalPlaceholder:'Please write your feedback or concerns freely.',
+    modalTitle:`${LI('file-pen','li-sm')} Feedback`,
+    modalPlaceholder:'Please write your feedback or concerns freely.',
     cancel:'Cancel', submit:'Submit',
     staffConnected:'You are now in staff mode. Your message will be forwarded to a staff member.',
-    robotCalled:'🤖 Robot has been called. Please wait.',
+    robotCalled:'Robot has been called. Please wait.',
     robotCalledSpeak:'Robot has been called. Please wait.',
-    nurseCalled:'🔔 Nurse has been called. Please wait.',
+    nurseCalled:'Nurse has been called. Please wait.',
     nurseCalledSpeak:'Nurse has been called. Please wait.',
-    called:'Called', suggestDone:'Your feedback has been submitted. Thank you 😊',
+    called:'Called', suggestDone:'Your feedback has been submitted. Thank you.',
     thinking:'Thinking…', errPrefix:'Error: ', sttLang:'en-US', ttsLang:'en-US',
   },
   zh: {
     titleText:'医院向导', statusMain:'我能帮您什么？', statusSub:'请点击下方按钮提问',
-    chatEmpty:'暂无对话。<br>请输入问题或说话 😊',
-    staffWaiting:'⏳ 正在连接工作人员，请稍候',
-    tabAI:'🤖 AI解答', tabStaff:'👩‍⚕️ 工作人员',
-    badgeAI:'🤖 AI模式', badgeStaff:'👩‍⚕️ 工作人员模式',
+    chatEmpty:`暂无对话。<br>请输入问题或说话 ${LI('smile','li-sm')}`,
+    staffWaiting:`${LI('hourglass','li-sm')} 正在连接工作人员，请稍候`,
+    tabAI:`${LI('bot','li-sm')} AI解答`, tabStaff:`${LI('stethoscope','li-sm')} 工作人员`,
+    badgeAI:`${LI('bot','li-sm')} AI模式`, badgeStaff:`${LI('stethoscope','li-sm')} 工作人员模式`,
     placeholder:'请输入您的问题…', placeholderStaff:'请输入给工作人员的消息…',
     send:'发送',
-    quickReception:'📋 挂号处', quickDept:'🏥 科室', quickHours:'🕐 营业时间', quickToilet:'🚻 洗手间',
+    quickReception:`${LI('clipboard-list','li-xs')} 挂号处`,
+    quickDept:`${LI('hospital','li-xs')} 科室`,
+    quickHours:`${LI('clock','li-xs')} 营业时间`,
+    quickToilet:`${LI('users','li-xs')} 洗手间`,
     quickSendReception:'挂号处在哪里？', quickSendDept:'请介绍科室',
     quickSendHours:'营业时间是什么时候？', quickSendToilet:'洗手间在哪里？',
     voiceLabel:'语音', voiceDefault:'默认语音',
     btnRobot:'呼叫机器人', btnSuggest:'建议箱', btnNurse:'呼叫护士',
-    modalTitle:'📝 建议箱', modalPlaceholder:'请随意写下您的意见或建议。',
+    modalTitle:`${LI('file-pen','li-sm')} 建议箱`,
+    modalPlaceholder:'请随意写下您的意见或建议。',
     cancel:'取消', submit:'提交',
     staffConnected:'您已进入工作人员模式，消息将转发给工作人员。',
-    robotCalled:'🤖 机器人已呼叫，请稍候。',
+    robotCalled:'机器人已呼叫，请稍候。',
     robotCalledSpeak:'机器人已呼叫，请稍候。',
-    nurseCalled:'🔔 护士已呼叫，请稍候。',
+    nurseCalled:'护士已呼叫，请稍候。',
     nurseCalledSpeak:'护士已呼叫，请稍候。',
-    called:'已呼叫', suggestDone:'建议已提交，感谢您的宝贵意见 😊',
+    called:'已呼叫', suggestDone:'建议已提交，感谢您的宝贵意见。',
     thinking:'回答中…', errPrefix:'错误：', sttLang:'zh-CN', ttsLang:'zh-CN',
   },
   ja: {
     titleText:'病院案内', statusMain:'ご用件をどうぞ', statusSub:'下のボタンを押してご質問ください',
-    chatEmpty:'まだ会話はありません。<br>質問を入力または話しかけてください 😊',
-    staffWaiting:'⏳ スタッフに接続中…しばらくお待ちください',
-    tabAI:'🤖 AI回答', tabStaff:'👩‍⚕️ スタッフ接続',
-    badgeAI:'🤖 AIモード', badgeStaff:'👩‍⚕️ スタッフモード',
+    chatEmpty:`まだ会話はありません。<br>質問を入力または話しかけてください ${LI('smile','li-sm')}`,
+    staffWaiting:`${LI('hourglass','li-sm')} スタッフに接続中…しばらくお待ちください`,
+    tabAI:`${LI('bot','li-sm')} AI回答`, tabStaff:`${LI('stethoscope','li-sm')} スタッフ接続`,
+    badgeAI:`${LI('bot','li-sm')} AIモード`, badgeStaff:`${LI('stethoscope','li-sm')} スタッフモード`,
     placeholder:'ご質問を入力してください…', placeholderStaff:'スタッフへのメッセージを入力してください…',
     send:'送信',
-    quickReception:'📋 受付', quickDept:'🏥 診療科', quickHours:'🕐 診療時間', quickToilet:'🚻 トイレ',
+    quickReception:`${LI('clipboard-list','li-xs')} 受付`,
+    quickDept:`${LI('hospital','li-xs')} 診療科`,
+    quickHours:`${LI('clock','li-xs')} 診療時間`,
+    quickToilet:`${LI('users','li-xs')} トイレ`,
     quickSendReception:'受付はどこですか？', quickSendDept:'診療科を教えてください',
     quickSendHours:'診療時間はいつですか？', quickSendToilet:'トイレはどこですか？',
     voiceLabel:'音声応答', voiceDefault:'デフォルト',
     btnRobot:'ロボット呼出', btnSuggest:'ご意見箱', btnNurse:'看護師呼出',
-    modalTitle:'📝 ご意見箱', modalPlaceholder:'ご不満やご意見を自由にお書きください。',
+    modalTitle:`${LI('file-pen','li-sm')} ご意見箱`,
+    modalPlaceholder:'ご不満やご意見を自由にお書きください。',
     cancel:'キャンセル', submit:'送信',
     staffConnected:'スタッフ接続モードです。メッセージを入力するとスタッフに転送されます。',
-    robotCalled:'🤖 ロボットを呼び出しました。しばらくお待ちください。',
+    robotCalled:'ロボットを呼び出しました。しばらくお待ちください。',
     robotCalledSpeak:'ロボットを呼び出しました。しばらくお待ちください。',
-    nurseCalled:'🔔 看護師を呼び出しました。しばらくお待ちください。',
+    nurseCalled:'看護師を呼び出しました。しばらくお待ちください。',
     nurseCalledSpeak:'看護師を呼び出しました。しばらくお待ちください。',
-    called:'呼出済', suggestDone:'ご意見を受け付けました。ありがとうございます 😊',
+    called:'呼出済', suggestDone:'ご意見を受け付けました。ありがとうございます。',
     thinking:'回答中…', errPrefix:'エラー：', sttLang:'ja-JP', ttsLang:'ja-JP',
   },
 };
@@ -445,7 +478,7 @@ ch.onmessage = (e) => {
   const { type, text } = e.data;
   if (type === 'staff-reply') {
     removeWaiting();
-    addBubble('staff-rep', `👩‍⚕️ ${text}`);
+    addBubble('staff-rep', text);
     if (ttsEnabled) speak(text);
   }
 };
@@ -469,12 +502,12 @@ function setLanguage(lang) {
   const chatEmpty = document.getElementById('chat-empty');
   if (chatEmpty) chatEmpty.innerHTML = t.chatEmpty;
 
-  document.getElementById('staff-waiting').textContent = t.staffWaiting;
-  document.getElementById('tab-ai').innerHTML           = t.tabAI;
-  document.getElementById('tab-staff').innerHTML        = t.tabStaff;
+  document.getElementById('staff-waiting').innerHTML = t.staffWaiting;
+  document.getElementById('tab-ai').innerHTML        = t.tabAI;
+  document.getElementById('tab-staff').innerHTML     = t.tabStaff;
 
   const badge = document.getElementById('mode-badge');
-  badge.textContent = mode === 'ai' ? t.badgeAI : t.badgeStaff;
+  badge.innerHTML = mode === 'ai' ? t.badgeAI : t.badgeStaff;
 
   document.getElementById('text-input').placeholder =
     mode === 'ai' ? t.placeholder : t.placeholderStaff;
@@ -489,19 +522,20 @@ function setLanguage(lang) {
 
   if (!document.getElementById('btn-robot').classList.contains('called')) {
     document.getElementById('btn-robot').innerHTML =
-      `<span class="icon">🤖</span><span id="label-robot">${t.btnRobot}</span>`;
+      `<span class="icon">${LI('bot','li-xl')}</span><span id="label-robot">${t.btnRobot}</span>`;
   }
   document.getElementById('label-suggest').textContent = t.btnSuggest;
   if (!document.getElementById('btn-nurse').classList.contains('called')) {
     document.getElementById('btn-nurse').innerHTML =
-      `<span class="icon">🔔</span><span id="label-nurse">${t.btnNurse}</span>`;
+      `<span class="icon">${LI('bell','li-xl')}</span><span id="label-nurse">${t.btnNurse}</span>`;
   }
 
-  document.getElementById('modal-suggest-title').textContent = t.modalTitle;
-  document.getElementById('suggest-text').placeholder        = t.modalPlaceholder;
-  document.getElementById('btn-cancel').textContent          = t.cancel;
-  document.getElementById('btn-submit').textContent          = t.submit;
+  document.getElementById('modal-suggest-title').innerHTML = t.modalTitle;
+  document.getElementById('suggest-text').placeholder      = t.modalPlaceholder;
+  document.getElementById('btn-cancel').textContent        = t.cancel;
+  document.getElementById('btn-submit').textContent        = t.submit;
 
+  lucide.createIcons();
   loadVoices();
   history = [];
 }
@@ -518,18 +552,19 @@ function setMode(m) {
     tabAI.className    = 'mode-tab active-ai';
     tabStaff.className = 'mode-tab';
     badge.className    = 'mode-badge ai';
-    badge.textContent  = t.badgeAI;
+    badge.innerHTML    = t.badgeAI;
     face.classList.remove('staff-mode');
     document.getElementById('text-input').placeholder = t.placeholder;
   } else {
     tabAI.className    = 'mode-tab';
     tabStaff.className = 'mode-tab active-staff';
     badge.className    = 'mode-badge staff';
-    badge.textContent  = t.badgeStaff;
+    badge.innerHTML    = t.badgeStaff;
     face.classList.add('staff-mode');
     document.getElementById('text-input').placeholder = t.placeholderStaff;
     addBubble('bot', t.staffConnected);
   }
+  lucide.createIcons();
 }
 
 async function sendMessage() {
@@ -635,7 +670,7 @@ function loadVoices() {
     const opt = document.createElement('option');
     opt.value = i;
     opt.textContent = v.name + (v.lang ? ` (${v.lang})` : '');
-    if (v.lang === t.ttsLang) opt.textContent = '⭐ ' + opt.textContent;
+    if (v.lang === t.ttsLang) opt.textContent = '★ ' + opt.textContent;
     sel.appendChild(opt);
   });
 }
@@ -667,14 +702,16 @@ function callRobot() {
   if (btn.classList.contains('called')) return;
   btn.classList.add('called');
   const t = LANG_TEXT[currentLang];
-  btn.innerHTML = `<span class="icon">✅</span>${t.called}`;
+  btn.innerHTML = `<span class="icon">${LI('check','li-xl')}</span>${t.called}`;
+  lucide.createIcons();
   ch.postMessage({ type: 'robot-call', timestamp: Date.now() });
   addBubble('bot', t.robotCalled);
   if (ttsEnabled) speak(t.robotCalledSpeak);
   setTimeout(() => {
     btn.classList.remove('called');
     const t2 = LANG_TEXT[currentLang];
-    btn.innerHTML = `<span class="icon">🤖</span><span id="label-robot">${t2.btnRobot}</span>`;
+    btn.innerHTML = `<span class="icon">${LI('bot','li-xl')}</span><span id="label-robot">${t2.btnRobot}</span>`;
+    lucide.createIcons();
   }, 10000);
 }
 
@@ -683,14 +720,16 @@ function callNurse() {
   if (btn.classList.contains('called')) return;
   btn.classList.add('called');
   const t = LANG_TEXT[currentLang];
-  btn.innerHTML = `<span class="icon">✅</span>${t.called}`;
+  btn.innerHTML = `<span class="icon">${LI('check','li-xl')}</span>${t.called}`;
+  lucide.createIcons();
   ch.postMessage({ type: 'nurse-call', timestamp: Date.now() });
   addBubble('bot', t.nurseCalled);
   if (ttsEnabled) speak(t.nurseCalledSpeak);
   setTimeout(() => {
     btn.classList.remove('called');
     const t2 = LANG_TEXT[currentLang];
-    btn.innerHTML = `<span class="icon">🔔</span><span id="label-nurse">${t2.btnNurse}</span>`;
+    btn.innerHTML = `<span class="icon">${LI('bell','li-xl')}</span><span id="label-nurse">${t2.btnNurse}</span>`;
+    lucide.createIcons();
   }, 10000);
 }
 
@@ -709,15 +748,16 @@ function submitSuggest() {
   addBubble('bot', LANG_TEXT[currentLang].suggestDone);
 }
 
+const BAV_ICON = { bot: 'bot', user: 'user', 'staff-rep': 'stethoscope' };
+
 function addBubble(role, text) {
-  const wrap  = document.getElementById('chat-wrap');
-  const icons = { bot:'🤖', user:'🧑', 'staff-rep':'👩‍⚕️' };
-  const row   = document.createElement('div');
+  const wrap = document.getElementById('chat-wrap');
+  const row  = document.createElement('div');
   row.className = `bubble-row ${role}`;
 
   const av = document.createElement('div');
   av.className = 'bav';
-  av.textContent = icons[role] || '🧑';
+  av.innerHTML = LI(BAV_ICON[role] || 'user', 'li-sm');
 
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
@@ -730,14 +770,16 @@ function addBubble(role, text) {
   row.appendChild(bubble);
   wrap.appendChild(row);
   wrap.scrollTop = wrap.scrollHeight;
+  lucide.createIcons();
 }
 function addTyping() {
   const wrap = document.getElementById('chat-wrap');
   const row  = document.createElement('div');
   const id   = 'typing-' + Date.now();
   row.className = 'bubble-row bot'; row.id = id;
-  row.innerHTML = `<div class="bav">🤖</div><div class="bubble typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>`;
+  row.innerHTML = `<div class="bav">${LI('bot','li-sm')}</div><div class="bubble typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>`;
   wrap.appendChild(row); wrap.scrollTop = wrap.scrollHeight;
+  lucide.createIcons();
   return id;
 }
 function removeTyping(id) { document.getElementById(id)?.remove(); }
@@ -752,6 +794,8 @@ function setRobotState(state) {
   if (state === 'listening') f.classList.add('listening');
   if (state === 'speaking')  f.classList.add('speaking');
 }
+
+lucide.createIcons();
 </script>
   <script>if("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");</script>
 </body>
