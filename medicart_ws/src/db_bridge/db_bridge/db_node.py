@@ -73,6 +73,11 @@ class DbNode(Node):
             String, f'/{self.ns}/nurse_cart/round_done', 10)
         self._fb.listen(f'{self.ns}/nurse_cart/round_done', self._on_rtdb_round_done)
 
+        # 순회 문진 문진 완료 신호 — RTDB {ns}/patrol/intake_done → ROS topic
+        self._intake_done_pub = self.create_publisher(
+            String, f'/{self.ns}/patrol/intake_done', 10)
+        self._fb.listen(f'{self.ns}/patrol/intake_done', self._on_rtdb_intake_done)
+
         self._timer = self.create_timer(period, self._tick)
         self.get_logger().info(
             f'[db_node] 준비 완료 — mission_pool=/{self._pool_path} 대기 중, '
@@ -102,6 +107,18 @@ class DbNode(Node):
             self._fb.write(f'{self.ns}/nurse_cart/round_done', False)
         except Exception as exc:               # noqa: BLE001
             self.get_logger().warn(f'[db_node] round_done RTDB 초기화 실패: {exc}')
+
+    def _on_rtdb_intake_done(self, event):
+        """RTDB {ns}/patrol/intake_done 값이 true 로 바뀌면 ROS topic 발행 + 즉시 초기화."""
+        data = getattr(event, 'data', None)
+        if data not in (True, 'true', 1):
+            return
+        self.get_logger().info('[db_node] patrol 문진 완료 신호 감지 → ROS topic 발행')
+        self._publish(self._intake_done_pub, {'intake_done': True, 'ts': _now_ms()})
+        try:
+            self._fb.write(f'{self.ns}/patrol/intake_done', False)
+        except Exception as exc:               # noqa: BLE001
+            self.get_logger().warn(f'[db_node] intake_done RTDB 초기화 실패: {exc}')
 
     # ── RTDB 동기화 ──────────────────────────────────────────────────────
     def _refresh_pool(self, reason):
@@ -162,6 +179,11 @@ class DbNode(Node):
                             {'status': 'running', 'updated_ts': _now_ms()})
         except Exception as exc:                       # noqa: BLE001
             self.get_logger().error(f'[db_node] status=running 기록 실패 id={mid}: {exc}')
+        if action == 'patrol_intake_mission':         # 직전 실행의 stale phase 제거
+            try:
+                self._fb.write(f'{self.ns}/patrol/phase', 'idle')
+            except Exception as exc:                   # noqa: BLE001
+                self.get_logger().warn(f'[db_node] patrol phase 초기화 실패: {exc}')
         req = {'id': mid, 'action': action, 'params': mission.get('params', {})}
         if mission.get('mode'):                       # 모드 액션(start/stop)일 때 mode 전달
             req['mode'] = mission.get('mode')
@@ -204,11 +226,30 @@ class DbNode(Node):
                     self.get_logger().info('[db_node] nurse_cart phase=arrived → RTDB 기록')
                 except Exception as exc:               # noqa: BLE001
                     self.get_logger().warn(f'[db_node] nurse_cart phase 기록 실패: {exc}')
+            # 순회 문진 병상 도착 신호('stop_arrived:{idx}:{room}') → RTDB patrol/phase=arrived
+            if (cur.get('action') == 'patrol_intake_mission'
+                    and str(detail).startswith('stop_arrived:')):
+                self._write_patrol_arrived(detail)
             self._last_event = f'{status} {mid}'
         elif status in ('done', 'failed'):
             self._finish(mid, status, detail)
         else:
             self.get_logger().warn(f'[db_node] 알 수 없는 status={status} id={mid}')
+
+    def _write_patrol_arrived(self, detail):
+        """'stop_arrived:{idx}:{room}' → RTDB patrol/phase=arrived + stop + expected_room."""
+        parts = str(detail).split(':')
+        idx = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+        room = parts[2] if len(parts) > 2 else ''
+        try:
+            self._fb.write(f'{self.ns}/patrol/phase', 'arrived')
+            self._fb.write(f'{self.ns}/patrol/stop', {'idx': idx, 'room': room, 'ts': _now_ms()})
+            if room:                                   # 카트 iPad QR 검증 기준 병상 갱신
+                self._fb.update('display', {'expected_room': room, 'expected_at': _now_ms()})
+            self.get_logger().info(
+                f'[db_node] patrol phase=arrived idx={idx} room={room} → RTDB 기록')
+        except Exception as exc:                       # noqa: BLE001
+            self.get_logger().warn(f'[db_node] patrol phase 기록 실패: {exc}')
 
     def _finish(self, mid, status, detail):
         """terminal — mission_log 아카이브 후 mission_pool 에서 비우고 다음 진행."""
@@ -231,6 +272,12 @@ class DbNode(Node):
                 self._fb.write(f'{self.ns}/nurse_cart/phase', 'idle')
             except Exception as exc:                   # noqa: BLE001
                 self.get_logger().warn(f'[db_node] nurse_cart phase 초기화 실패: {exc}')
+        # 순회 문진 임무 종료 시 RTDB phase 초기화 → 웹 요약 화면 트리거
+        if action == 'patrol_intake_mission':
+            try:
+                self._fb.write(f'{self.ns}/patrol/phase', 'idle')
+            except Exception as exc:                   # noqa: BLE001
+                self.get_logger().warn(f'[db_node] patrol phase 초기화 실패: {exc}')
         self._last_event = f'{status} {action}({mid})'
         # rclpy 로거는 '같은 호출 위치'에서 심각도를 바꾸면 예외 → info/error 를 별도 라인으로.
         finish_msg = (f'[db_node] ■ FINISH id={mid} action={action} status={status} '

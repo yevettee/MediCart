@@ -22,6 +22,7 @@ from .mission_sequencer import MissionSequencer, SEQUENCE_ACTION
 from .mode_arbiter import ModeArbiter
 from .nav_executor import NavExecutor
 from .nurse_cart_sequencer import NurseCartSequencer, NURSE_CART_ACTION
+from .patrol_intake_sequencer import PatrolIntakeSequencer, PATROL_INTAKE_ACTION
 from .system_commands import SYSTEM_ACTIONS
 
 
@@ -72,11 +73,17 @@ class MissionManagerNode(Node):
         # 간호사 카트 시퀀서 — nurse_cart_mission(goto_pharmacy→...) 오케스트레이션.
         self._nurse_cart = NurseCartSequencer(
             self._nav, self._arbiter, self._publish_feedback, self.get_logger())
+        # 시나리오 A 순회 문진 시퀀서 — patrol_intake_mission(병상별 goto→intake 대기 루프).
+        self._patrol_intake = PatrolIntakeSequencer(
+            self._nav, self._arbiter, self._publish_feedback, self.get_logger())
         # db_node 가 RTDB ocr_done 을 감지해 발행하는 topic 을 받아 시퀀서에 전달.
         self.create_subscription(
             String, f'/{ns}/nurse_cart/ocr_done', self._on_nurse_cart_ocr_done, 10)
         self.create_subscription(
             String, f'/{ns}/nurse_cart/round_done', self._on_nurse_cart_round_done, 10)
+        # db_node 가 RTDB patrol/intake_done 을 감지해 발행하는 topic → 순회 문진 시퀀서 전달.
+        self.create_subscription(
+            String, f'/{ns}/patrol/intake_done', self._on_patrol_intake_done, 10)
         self._cmd_pub = self.create_publisher(Twist, f'/{ns}/cmd_vel', 10)
         self._robot_mode_pub = self.create_publisher(String, f'/{ns}/robot_mode', 10)
         self.create_subscription(LaserScan, f'/{ns}/scan', self._on_scan, 10)
@@ -100,6 +107,8 @@ class MissionManagerNode(Node):
             self._sequencer.start(req.get('id'), req.get('params'))
         elif action == NURSE_CART_ACTION:             # nurse_cart_mission(goto_pharmacy→...)
             self._nurse_cart.start(req.get('id'), req.get('params'))
+        elif action == PATROL_INTAKE_ACTION:          # patrol_intake_mission(병상 순회+문진 대기)
+            self._patrol_intake.start(req.get('id'), req.get('params'))
         elif action in SYSTEM_ACTIONS:               # dock/undock/ros_restart/reboot/shutdown
             self._executor.handle(req)
         elif action == 'goto':                        # 좌표 이동(Nav2 + dock-aware)
@@ -121,6 +130,10 @@ class MissionManagerNode(Node):
     def _on_nurse_cart_round_done(self, _msg):
         """db_node 경유 회진 완료 신호 → nurse_cart 시퀀서 WAIT_ROUND_DONE 해제 → 홈 복귀."""
         self._nurse_cart.signal_round_done()
+
+    def _on_patrol_intake_done(self, _msg):
+        """db_node 경유 문진 완료 신호 → patrol_intake 시퀀서 WAIT_INTAKE 해제 → 다음 병상."""
+        self._patrol_intake.signal_intake_done()
 
     def _handle_goto(self, req):
         """goto 좌표 이동: arbiter 'goto'(nav) 점거 → NavExecutor 실행 → 종료 시 해제·보고."""
@@ -163,8 +176,9 @@ class MissionManagerNode(Node):
 
     def _control_tick(self):
         now = time.monotonic()
-        self._sequencer.tick(now)             # 시나리오 A (undock→patrol→dock)
+        self._sequencer.tick(now)             # 시나리오 A 자율 (undock→patrol→dock)
         self._nurse_cart.tick(now)            # 간호사 카트 (goto_pharmacy→...)
+        self._patrol_intake.tick(now)         # 시나리오 A 순회 문진 (병상 순회+문진 대기)
         mode, twist = self._arbiter.tick(now, self._forward_clearance, None)
         if twist is not None:                 # REACTIVE 활성 → 게이트된 속도
             self._publish_cmd(twist[0], twist[1])
