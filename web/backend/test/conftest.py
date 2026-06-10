@@ -24,6 +24,7 @@ class FakeRTDB:
 
     def __init__(self):
         self.data = {}
+        self._push_seq = 0
 
     def get(self, path):
         node = self.data
@@ -58,17 +59,23 @@ class FakeRTDB:
         node.pop(parts[-1], None)
 
     def update(self, path, patch):
-        """path 아래 dict 를 patch 로 부분 갱신."""
-        existing = self.get(path)
-        if not isinstance(existing, dict):
-            existing = {}
-        existing.update(patch)
-        self.set(path, existing)
+        """path 아래를 patch 로 부분 갱신.
+        Firebase 멀티패스 업데이트 의미(슬래시 포함 patch 키 = 중첩 경로 쓰기)도 지원."""
+        base_path = str(path).strip("/")
+        flat = {k: v for k, v in patch.items() if "/" not in str(k)}
+        nested = {k: v for k, v in patch.items() if "/" in str(k)}
+        if flat:
+            existing = self.get(path)
+            base = dict(existing) if isinstance(existing, dict) else {}
+            base.update(flat)
+            self.set(path, base)
+        for k, v in nested.items():
+            self.set(f"{base_path}/{k}" if base_path else str(k), v)
 
     def push(self, path, value):
-        """Firebase push 흉내 — 단조증가 key 반환."""
-        import time
-        key = f"push_{int(time.time() * 1000000)}"
+        """Firebase push 흉내 — 단조증가 key 반환(결정적·충돌 없음)."""
+        self._push_seq += 1
+        key = f"push_{self._push_seq:08d}"
         parts = [p for p in str(path).strip("/").split("/") if p]
         node = self.data
         for k in parts:
@@ -139,6 +146,7 @@ class _FakeDB:
 
 @pytest.fixture
 def client():
+    flask_app.app.config["TESTING"] = True
     return flask_app.app.test_client()
 
 
