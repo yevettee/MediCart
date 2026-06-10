@@ -322,14 +322,6 @@ def api_ocr():
     return jsonify({"text": text})
 
 
-@app.post("/api/ocr/done")
-def ocr_done():
-    """OCR 완료 버튼 → {ns}/nurse_cart/ocr_done = true (기본 robot6). staff 권한."""
-    body = request.get_json(silent=True) or {}
-    fb_read.set_ocr_done(body.get("ns") or "robot6", True)
-    return jsonify({"ok": True})
-
-
 # ── 시나리오 B — 간호사 카트 (nurse_cart) 트리거 ──────────────────────────────
 @app.post("/api/missions")
 def create_mission():

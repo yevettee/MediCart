@@ -203,16 +203,6 @@ export async function ocr(blob: Blob): Promise<{ text: string }> {
   return r.json();
 }
 
-/** OCR 완료 → RTDB {ns}/nurse_cart/ocr_done = true (기본 robot6). */
-export async function setOcrDone(ns = "robot6"): Promise<void> {
-  const r = await fetch(`${API_BASE}/api/ocr/done`, {
-    method: "POST", credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ns }),
-  });
-  if (!r.ok) throw new Error(`/api/ocr/done → ${r.status}`);
-}
-
 // ── 시나리오 B — 간호사 카트 (nurse_cart) 트리거 ──────────────────────────────
 export type NurseCartPhase = "idle" | "arrived" | "tracking" | "done";
 
