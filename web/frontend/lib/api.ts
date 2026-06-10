@@ -230,7 +230,14 @@ export async function ocr(blob: Blob): Promise<{ text: string }> {
 }
 
 // ── 시나리오 B — 간호사 카트 (nurse_cart) 트리거 ──────────────────────────────
-export type NurseCartPhase = "idle" | "arrived" | "tracking" | "done";
+export type NurseCartPhase =
+  | "idle"
+  | "arrived"
+  | "tracking"
+  | "bed_arrived"
+  | "wait_qr"
+  | "returning"
+  | "done";
 
 /** 회진 시작 (staff) — 시나리오 B 전체(약품실→OCR→추종→홈 복귀·도킹). */
 export async function startRound(ns: string): Promise<{ ok: boolean }> {

@@ -1,0 +1,83 @@
+%%{init: {"flowchart": {"curve": "linear"}}}%%
+flowchart LR
+  %% MediCart one-page system architecture
+  %% Green-ish links are topics, blue-ish are services, orange-ish are actions.
+
+  subgraph CENTRAL["CENTRAL PC<br/>Dashboard + Mission Control UI + DB Bridge"]
+    DASH["dashboard_node<br/>start/cancel mission, unlock cart<br/>select patient, show state and alerts"]
+    DB["db_bridge_node<br/>Firestore repository adapter<br/>round plan, questionnaire, prescription"]
+    FIRE["Firebase / Central DB<br/>patients, rooms, beds, meds, visit logs"]
+    ALERT["alert_monitor<br/>pain max, absent patient, scan mismatch<br/>visible on dashboard"]
+    LEGEND["Legend<br/>[topic] publish / subscribe<br/>[srv] request / response<br/>[action] long-running goal<br/>RobotState: state:string, battery:float32,<br/>error_code:int32, detail_json:string"]
+  end
+
+  subgraph R3["/robot3 TURTLEBOT4<br/>Patient Rounding AMR"]
+    MM3["mission_manager_node<br/>rounding state machine<br/>revisit queue, exceptions<br/>robot_namespace=/robot3"]
+    NAV3["Nav2 Stack<br/>navigate_to_pose<br/>hospital map + costmap"]
+    DOCK3["Create3 Docking<br/>undock / dock<br/>result is_docked:bool"]
+    Q3["questionnaire_node<br/>patient present/matched<br/>answers_json, pain_score:int32"]
+    OBS3["obstacle_detector_node<br/>depth/image to PointCloud2<br/>height filter z_min/z_max"]
+    SENS3["TB4 sensors/base<br/>camera, depth, lidar, odom<br/>Create3 base controller"]
+  end
+
+  subgraph R6["/robot6 TURTLEBOT4<br/>Nurse Medication AMR"]
+    MM6["mission_manager_node<br/>medication state machine<br/>arrive room, stop follow<br/>robot_namespace=/robot6"]
+    NAV6["Nav2 Stack<br/>navigate_to_pose<br/>return to station"]
+    DOCK6["Create3 Docking<br/>undock / dock<br/>result is_docked:bool"]
+    SCAN6["scanner_node<br/>ScanPatient, ScanMedicine<br/>step_index:int32, match:bool"]
+    OCR6["ocr_node<br/>GetOcrResult<br/>raw_text, cleaned_text, confidence"]
+    CAM6["WebCam / OAK-D<br/>image_raw, depth_image<br/>used by OCR/tracking/obstacles"]
+    TRK6["nurse_tracker_node<br/>YOLO + depth + target pose"]
+    LOCK6["cart_lock_node<br/>locked:bool, operator_id:string"]
+    OBS6["obstacle_detector_node<br/>PointCloud2 to Nav2 costmap"]
+  end
+
+  %% Central internal data flow
+  DB -->|"Firestore API / SDK"| FIRE
+  FIRE -->|"[topic] /nurse_alert"| ALERT
+
+  %% Dashboard to robot3
+  DASH -->|"[srv] /robot3/start_mission<br/>StartMission PATIENT_ROUND"| MM3
+  DASH -->|"[srv] /robot3/cancel_mission<br/>cancel/get status"| MM3
+  MM3 -->|"[topic] /robot3/robot_state<br/>RobotState + MissionEvent"| DASH
+  MM3 -->|"[srv] /db/get_round_plan<br/>[srv] /db/update_visit_status<br/>[srv] /db/update_questionnaire"| DB
+  MM3 -->|"[action] /robot3/navigate_to_pose<br/>PoseStamped: position float64, quaternion float64"| NAV3
+  MM3 -->|"[action] /robot3/undock<br/>[action] /robot3/dock"| DOCK3
+  MM3 -->|"[srv] patient_check + questionnaire"| Q3
+  Q3 -->|"QuestionnaireResult<br/>patient_present:bool, patient_matched:bool,<br/>pain_score:int32, answers_json:string"| MM3
+  SENS3 -->|"[topic] /robot3/camera/depth<br/>sensor_msgs/Image or CompressedImage"| OBS3
+  OBS3 -->|"[topic] /robot3/obstacles/points<br/>sensor_msgs/PointCloud2"| NAV3
+  MM3 -->|"[topic] /nurse_alert<br/>pain_score == max / absent"| ALERT
+
+  %% Dashboard to robot6
+  DASH -->|"[srv] /robot6/start_mission<br/>StartMission MEDICATION"| MM6
+  DASH -->|"[srv] /robot6/cancel_mission<br/>cancel/get status"| MM6
+  MM6 -->|"[topic] /robot6/robot_state<br/>RobotState + MissionEvent"| DASH
+  MM6 -->|"[srv] medication mission log<br/>visit/complete/error update"| DB
+  MM6 -->|"[action] /robot6/navigate_to_pose<br/>PoseStamped: position float64, quaternion float64"| NAV6
+  MM6 -->|"[action] /robot6/undock<br/>[action] /robot6/dock"| DOCK6
+  DASH -->|"[srv] /robot6/set_cart_lock<br/>locked:bool, operator_id:string"| LOCK6
+  DASH -->|"[srv] /robot6/scan_patient<br/>ScanPatient patient_id:string<br/>[srv] /robot6/scan_medicine"| SCAN6
+
+  %% Medication scanning
+  SCAN6 -->|"[srv] /robot6/get_ocr_result<br/>cleaned_text:string, confidence:float32"| OCR6
+  CAM6 -->|"[topic] /robot6/camera/image_raw<br/>sensor_msgs/Image"| OCR6
+  SCAN6 -->|"[srv] /db/get_prescription<br/>[srv] /db/verify_medicine<br/>patient_id:string, step_index:int32, scanned_text:string"| DB
+  SCAN6 -->|"[topic] /nurse_alert<br/>medicine mismatch / OCR fail"| ALERT
+
+  %% Tracking and obstacle perception
+  MM6 -->|"[srv] /robot6/start_tracking<br/>[srv] /robot6/stop_tracking"| TRK6
+  TRK6 -->|"[topic] /robot6/tracking_target<br/>TargetBBox bbox:float32[4], confidence:float32,<br/>depth:float32, spatial_coordinates:Point<br/>or /robot6/cmd_vel geometry_msgs/Twist"| NAV6
+  CAM6 -->|"[topic] /robot6/depth/image_raw<br/>to tracker / obstacles"| TRK6
+  CAM6 -->|"[topic] /robot6/depth/image_raw<br/>to tracker / obstacles"| OBS6
+  CAM6 -->|"[topic] /robot6/camera/image_raw<br/>sensor_msgs/Image"| TRK6
+  OBS6 -->|"[topic] /robot6/obstacles/points<br/>sensor_msgs/PointCloud2"| NAV6
+
+  %% Styling
+  classDef central fill:#ffffff,stroke:#334155,stroke-width:2px,color:#0f172a;
+  classDef robot fill:#ffffff,stroke:#64748b,stroke-width:1.5px,color:#0f172a;
+  classDef storage fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+
+  class DASH,DB,ALERT,LEGEND central;
+  class FIRE storage;
+  class MM3,NAV3,DOCK3,Q3,OBS3,SENS3,MM6,NAV6,DOCK6,SCAN6,OCR6,CAM6,TRK6,LOCK6,OBS6 robot;

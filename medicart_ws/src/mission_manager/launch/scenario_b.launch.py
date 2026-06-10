@@ -51,6 +51,9 @@ def launch_setup(context, *args, **kwargs):
     fb_cred = LaunchConfiguration('fb_cred').perform(context)
     fb_db_url = LaunchConfiguration('fb_db_url').perform(context)
     discovery_ip = LaunchConfiguration('discovery_ip').perform(context)
+    front_cone_deg = float(LaunchConfiguration('front_cone_deg').perform(context))
+    lidar_stop = float(LaunchConfiguration('lidar_stop').perform(context))
+    depth_stop = float(LaunchConfiguration('depth_stop').perform(context))
 
     db_params = [{'namespace': ns, 'fb_cred': fb_cred, 'fb_db_url': fb_db_url}]
 
@@ -60,7 +63,15 @@ def launch_setup(context, *args, **kwargs):
 
         Node(package='mission_manager', executable='mission_manager_node',
              name='mission_manager_node', output='screen',
-             parameters=[{'namespace': ns, 'discovery_ip': discovery_ip}]),
+             parameters=[{
+                 'namespace': ns,
+                 'discovery_ip': discovery_ip,
+                 # round 추종은 Nav2가 아니라 reactive cmd_vel이라 좁은 통로에서
+                 # 정면 안전 게이트가 너무 넓으면 oscillation/정지가 생긴다.
+                 'front_cone_deg': front_cone_deg,
+                 'lidar_stop': lidar_stop,
+                 'depth_stop': depth_stop,
+             }]),
     ]
 
 
@@ -89,10 +100,91 @@ def generate_launch_description():
             'nurse_tracker',
             default_value='true',
             description='round(간호사 추종) tracker_node 동시 기동 여부'),
+        DeclareLaunchArgument(
+            'front_cone_deg',
+            default_value='14.0',
+            description='round safety gate LiDAR 정면 cone 반각(deg), 좁은 통로용 기본값'),
+        DeclareLaunchArgument(
+            'lidar_stop',
+            default_value='0.18',
+            description='round safety gate 전진 차단 LiDAR 거리(m), 좁은 통로용 기본값'),
+        DeclareLaunchArgument(
+            'depth_stop',
+            default_value='0.20',
+            description='round safety gate 전진 차단 depth 거리(m)'),
+        DeclareLaunchArgument(
+            'desired_distance',
+            default_value='0.30',
+            description='간호사 cmd_vel 추종 유지 거리(m)'),
+        DeclareLaunchArgument(
+            'deadband',
+            default_value='0.12',
+            description='추종 거리 deadband(m), 이 안에서는 전후진 정지'),
+        DeclareLaunchArgument(
+            'max_lin',
+            default_value='0.05',
+            description='round direct cmd_vel 최대 선속도(m/s)'),
+        DeclareLaunchArgument(
+            'max_ang',
+            default_value='0.25',
+            description='round direct cmd_vel 최대 각속도(rad/s)'),
+        DeclareLaunchArgument(
+            'tracking_speed_limit',
+            default_value='0.08',
+            description='round_nav 추종 중 Nav2 선속도 제한(m/s), 0이면 제한 해제'),
+        DeclareLaunchArgument(
+            'speed_limit_topic',
+            default_value='',
+            description='Nav2 controller speed_limit topic, 비우면 /<namespace>/speed_limit'),
+        DeclareLaunchArgument(
+            'base_frame',
+            default_value='base_link',
+            description='추종 좌표 변환에 사용할 로봇 base TF frame'),
+        DeclareLaunchArgument(
+            'angle_deadzone',
+            default_value='0.45',
+            description='이 각도(rad) 이상이면 회전만 수행. 값이 클수록 전진+회전을 허용'),
+        DeclareLaunchArgument(
+            'round_nav_follower',
+            default_value='false',
+            description='Nav2 goal 기반 round_nav follower 기동 여부(기본 false: direct cmd_vel 사용)'),
+        DeclareLaunchArgument(
+            'goal_update_period',
+            default_value='0.5',
+            description='round_nav Nav2 goal 최소 갱신 주기(s)'),
+        DeclareLaunchArgument(
+            'goal_shift_min',
+            default_value='0.15',
+            description='round_nav goal 재전송 최소 위치 변화(m)'),
         Node(
             package='nurse_tracker', executable='tracker_node',
             name='tracker_node', output='screen',
+            namespace=LaunchConfiguration('namespace'),
             condition=IfCondition(LaunchConfiguration('nurse_tracker')),
-            parameters=[{'namespace': _ns}]),
+            remappings=[('/tf', 'tf'), ('/tf_static', 'tf_static')],
+            parameters=[{
+                'namespace': LaunchConfiguration('namespace'),
+                'base_frame': LaunchConfiguration('base_frame'),
+                'desired_distance': LaunchConfiguration('desired_distance'),
+                'deadband': LaunchConfiguration('deadband'),
+                'angle_deadzone': LaunchConfiguration('angle_deadzone'),
+                'max_lin': LaunchConfiguration('max_lin'),
+                'max_ang': LaunchConfiguration('max_ang'),
+            }]),
+        Node(
+            package='nurse_tracker', executable='nav_goal_follower_node',
+            name='nav_goal_follower_node', output='screen',
+            namespace=LaunchConfiguration('namespace'),
+            condition=IfCondition(LaunchConfiguration('round_nav_follower')),
+            remappings=[('/tf', 'tf'), ('/tf_static', 'tf_static')],
+            parameters=[{
+                'namespace': LaunchConfiguration('namespace'),
+                'base_frame': LaunchConfiguration('base_frame'),
+                'desired_distance': LaunchConfiguration('desired_distance'),
+                'goal_update_period': LaunchConfiguration('goal_update_period'),
+                'goal_shift_min': LaunchConfiguration('goal_shift_min'),
+                'tracking_speed_limit': LaunchConfiguration('tracking_speed_limit'),
+                'speed_limit_topic': LaunchConfiguration('speed_limit_topic'),
+            }]),
         OpaqueFunction(function=launch_setup),
     ])
