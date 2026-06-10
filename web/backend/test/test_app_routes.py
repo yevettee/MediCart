@@ -89,12 +89,27 @@ def test_staff_blocked_from_admin_route(staff):
 def test_stream_is_event_stream(admin, fake_rtdb):
     """TC-X-SSE-01: /api/stream 응답이 text/event-stream Content-Type 반환.
 
-    SSE 스트림은 연결을 유지하므로 헤더만 확인하고 본문을 소비하지 않는다.
-    telemetry_stream() 내부의 listen()은 conftest FakeRTDB 에서 no-op.
+    SSE 제너레이터는 keepalive(queue.get timeout=15)에서 블록되므로 test_client 로
+    응답을 소비하면 15초 지연된다. WSGI environ 으로 status/headers 만 가로채고
+    제너레이터 본문은 소비하지 않아 즉시 검증한다(프로덕션 변경 없음).
     """
-    r = admin.get("/api/stream")
-    assert r.status_code == 200
-    assert "text/event-stream" in r.headers.get("Content-Type", "")
+    import app as flask_app
+    from werkzeug.test import EnvironBuilder
+
+    env = EnvironBuilder(method="GET", path="/api/stream",
+                         headers={"Cookie": "intel_auth=ADMINTOK"}).get_environ()
+    captured = {}
+
+    def start_response(status, headers, exc_info=None):
+        captured["status"] = status
+        captured["headers"] = dict(headers)
+
+    body = flask_app.app.wsgi_app(env, start_response)
+    if hasattr(body, "close"):
+        body.close()  # 제너레이터를 소비하지 않고 해제(15초 블록 회피)
+
+    assert captured["status"].startswith("200")
+    assert "text/event-stream" in captured["headers"].get("Content-Type", "")
 
 
 # ===========================================================================
@@ -120,7 +135,7 @@ def test_nurse_cart_start_requires_staff(client, fake_rtdb):
     """TC-A-TRIG-05: 무토큰 client 가 /api/nurse_cart/start POST → 401.
     mission_pool 이 변경되지 않음."""
     r = client.post("/api/nurse_cart/start", json={"ns": "robot6"})
-    assert r.status_code in (401, 403)
+    assert r.status_code == 401   # _require_auth 는 401만 반환(403 경로 없음)
     # mission_pool 에 아무것도 쓰이지 않았음
     assert not (fake_rtdb.get("robot6/mission_pool") or {})
 
