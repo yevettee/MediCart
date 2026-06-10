@@ -4,8 +4,14 @@ import Link from "next/link";
 import { getAmrs, getTargets, getMe, startRound, type AmrSnapshot, type GotoTarget } from "@/lib/api";
 import { roleAtLeast, type Role } from "@/lib/auth";
 import { PRIMARY_NS } from "@/lib/config";
-import PatrolIntakeOverlay from "@/components/PatrolIntakeOverlay";
 import RoundOverlay from "@/components/RoundOverlay";
+import RoundsIntakeOverlay, { type RoundStop } from "@/components/RoundsIntakeOverlay";
+
+// 순회 문진 정차 매핑: 회진 타겟(정확 좌표) ↔ /rooms 키(배정환자).
+const ROUND_MAP = [
+  { targetKey: "t101_1", room: "101-A", label: "101호 1번" },
+  { targetKey: "t101_2", room: "101-B", label: "101호 2번" },
+];
 
 type Banner = {
   href: string; title: string; sub: string; tone: string; soft: string; minRole: Role;
@@ -30,8 +36,8 @@ export default function Home() {
   const [roundConfirm, setRoundConfirm] = useState(false);
   const [roundActive, setRoundActive] = useState(false);
   const [roundMsg, setRoundMsg] = useState<string | null>(null);
-  const [patrolConfirm, setPatrolConfirm] = useState(false);
-  const [patrolActive, setPatrolActive] = useState(false);
+  const [roundsConfirm, setRoundsConfirm] = useState(false);
+  const [roundsActive, setRoundsActive] = useState(false);
 
   useEffect(() => {
     getMe().then((m) => setRole(m.role)).catch(() => setRole("patient"));
@@ -53,6 +59,16 @@ export default function Home() {
   useEffect(() => {
     getTargets().then((r) => setTargets(r.targets || {})).catch(() => {});
   }, []);
+
+  const dock = targets["dock"]
+    ? { x: targets.dock.x, y: targets.dock.y, yaw: targets.dock.yaw }
+    : { x: -8, y: -6, yaw: 0 };
+
+  // 순회 문진 정차 리스트 — 타겟 좌표 + /rooms 키(배정환자).
+  const roundStops: RoundStop[] = ROUND_MAP.flatMap((m) => {
+    const t = targets[m.targetKey];
+    return t ? [{ key: m.targetKey, label: m.label, room: m.room, x: t.x, y: t.y, yaw: t.yaw }] : [];
+  });
 
   // 회진 시작(시나리오 B): nurse_cart_mission 발행 후 단계 인식 오버레이.
   async function startRoundFlow() {
@@ -99,36 +115,39 @@ export default function Home() {
       ) : null}
       <RoundOverlay active={roundActive} ns={PRIMARY_NS} onExit={() => setRoundActive(false)} />
 
-      {/* 순회 문진 (로봇 자율 순회 + QR + 문진) — 회진과 별개 시나리오. staff+ */}
-      {roleAtLeast(role, "staff") && !patrolConfirm ? (
+      {/* 순회 문진 (로봇 자율 순회 + QR 배정환자 검증 + 문진/부재중) — 회진과 별개 시나리오. staff+ */}
+      {roleAtLeast(role, "staff") && (!roundsConfirm ? (
         <button
-          onClick={() => setPatrolConfirm(true)}
+          onClick={() => setRoundsConfirm(true)}
           className="w-full rounded-2xl px-7 py-6 mb-6 text-left text-white shadow-md flex items-center justify-between"
-          style={{ background: "linear-gradient(90deg,#16a34a,#0f7a37)" }}
+          style={{ background: "linear-gradient(90deg,#6d5ae0,#4b3bbd)" }}
         >
           <div>
             <div className="text-[20px] font-bold">순회 문진 시작</div>
-            <div className="text-[13px] text-white/80 mt-1">101호 병상을 순회하며 환자 QR로 문진을 자동 진행합니다</div>
+            <div className="text-[13px] text-white/80 mt-1">101호 1·2번을 순회하며 환자 QR 인식 후 문진을 진행합니다</div>
           </div>
           <span className="text-[26px]">▶</span>
         </button>
-      ) : roleAtLeast(role, "staff") && patrolConfirm ? (
+      ) : (
         <div
           className="w-full rounded-2xl px-7 py-6 mb-6 text-white shadow-md flex items-center justify-between gap-4"
-          style={{ background: "linear-gradient(90deg,#16a34a,#0f7a37)" }}
+          style={{ background: "linear-gradient(90deg,#6d5ae0,#4b3bbd)" }}
         >
-          <div className="text-[15px] font-semibold">순회 문진을 시작할까요? (전 환자 문진여부 리셋 후 101호 순회)</div>
+          <div className="text-[15px] font-semibold">순회 문진을 시작할까요? (101호 1·2번 순회 후 복귀·도킹)</div>
           <div className="flex gap-2 shrink-0">
-            <button onClick={() => { setPatrolConfirm(false); setPatrolActive(true); }} className="px-5 py-2.5 rounded-xl bg-white text-[#0f7a37] font-semibold">확인</button>
-            <button onClick={() => setPatrolConfirm(false)} className="px-5 py-2.5 rounded-xl bg-white/20 font-semibold">취소</button>
+            <button onClick={() => { setRoundsConfirm(false); setRoundsActive(true); }}
+              className="px-5 py-2.5 rounded-xl bg-white text-[#4b3bbd] font-semibold">확인</button>
+            <button onClick={() => setRoundsConfirm(false)}
+              className="px-5 py-2.5 rounded-xl bg-white/20 font-semibold">취소</button>
           </div>
         </div>
-      ) : null}
-      <PatrolIntakeOverlay
-        active={patrolActive}
+      ))}
+      <RoundsIntakeOverlay
+        active={roundsActive}
         ns={PRIMARY_NS}
-        targets={targets}
-        onExit={() => setPatrolActive(false)}
+        stops={roundStops}
+        dock={dock}
+        onExit={() => { setRoundsActive(false); setRoundsConfirm(false); }}
       />
 
       <div className="eyebrow">병동 보조 로봇</div>

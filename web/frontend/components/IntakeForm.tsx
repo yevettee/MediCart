@@ -44,6 +44,9 @@ export const SECTIONS: { n: string; title: string; fields: Field[] }[] = [
   ]},
 ];
 
+// 구 코드 호환 별칭(main RoundsIntakeOverlay 계열에서 참조 가능).
+export const INTAKE_SECTIONS = SECTIONS;
+
 export const today = () => new Date().toISOString().slice(0, 10);
 
 export function FieldInput(
@@ -84,7 +87,7 @@ export function FieldInput(
   return null;
 }
 
-// 공유 폼 본문(섹션 카드). 페이지/오버레이가 같은 필드를 렌더.
+// 공유 폼 본문(섹션 카드) — /intake 페이지가 자체 레이아웃에서 사용.
 export function IntakeFields(
   { form, set }: { form: Record<string, unknown>; set: (id: string, v: unknown) => void },
 ) {
@@ -110,10 +113,16 @@ export function IntakeFields(
   );
 }
 
-// 오버레이용 자기완결 의료진 폼: pid 의 새 외래방문 기록 추가 → onSaved.
-export default function IntakeForm(
-  { pid, prefillDept, onSaved }: { pid: string; prefillDept?: string; onSaved?: () => void },
-) {
+type Props = {
+  pid: string;
+  patientName?: string;
+  prefillDept?: string;
+  onSaved?: () => void;    // 저장 성공 시 (순회: 다음 호실)
+  onCancel?: () => void;   // 건너뛰기(선택)
+};
+
+/** 오버레이용 자기완결 의료진 문진 폼(카드 모달) — pid 의 새 외래방문 기록 추가. */
+export default function IntakeForm({ pid, patientName, prefillDept, onSaved, onCancel }: Props) {
   const [form, setForm] = useState<Record<string, unknown>>({ 방문일: today(), 진료과: prefillDept || "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(false);
@@ -124,18 +133,53 @@ export default function IntakeForm(
     setBusy(true); setErr(false);
     try {
       const r = await addVisit(pid, { ...form, 방문일: form.방문일 || today() });
-      if (r?.ok) { onSaved?.(); } else { setErr(true); }
+      if (r?.ok) onSaved?.();
+      else setErr(true);
     } catch { setErr(true); }
     finally { setBusy(false); }
   }
 
   return (
-    <div className="w-full max-w-[880px] mx-auto">
-      <IntakeFields form={form} set={set} />
-      <div className="mt-5 flex items-center justify-end gap-3">
+    <div className="w-full max-w-[820px] mx-auto bg-surface text-ink rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh]">
+      <div className="px-6 py-4 border-b border-line flex items-center justify-between shrink-0">
+        <div>
+          <div className="eyebrow">문진 · 외래방문</div>
+          <h2 className="text-[20px] font-bold mt-0.5">{patientName ? `${patientName}님 문진표` : "외래 방문 문진"}</h2>
+        </div>
+        <span className="text-[12.5px] text-ink-3 font-mono">{pid}</span>
+      </div>
+
+      <div className="px-6 py-4 overflow-y-auto">
+        <div className="flex flex-col gap-4">
+          {SECTIONS.map((sec) => (
+            <section key={sec.n} className="card p-5">
+              <div className="flex items-center gap-3 mb-3.5">
+                <span className="mono text-[12px] text-teal-600 bg-teal-soft rounded-md px-2 py-0.5 font-semibold">{sec.n}</span>
+                <h3 className="text-[15px] font-bold">{sec.title}</h3>
+              </div>
+              <div className="grid grid-cols-2 gap-x-5 gap-y-3.5">
+                {sec.fields.map((f) => (
+                  <div key={f.id} className={f.type === "textarea" ? "col-span-2" : ""}>
+                    <label className="block text-[12.5px] font-semibold text-ink-2 mb-1.5">{f.label}</label>
+                    <FieldInput f={f} value={form[f.id]} set={set} />
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </div>
+
+      <div className="px-6 py-3.5 border-t border-line flex items-center justify-end gap-3 shrink-0">
         {err && <span className="pill bg-red-soft text-red"><span className="dot bg-red" /> 저장 실패</span>}
-        <button onClick={submit} disabled={busy}
-          className="bg-teal text-white font-semibold text-[14px] px-6 py-2.5 rounded-xl hover:bg-teal-600 transition-colors disabled:opacity-40 shadow-[0_6px_16px_-6px_rgba(12,163,154,.6)]">
+        {onCancel && (
+          <button onClick={onCancel} disabled={busy}
+            className="px-5 py-2.5 rounded-xl border border-line text-ink-2 font-semibold text-[14px] disabled:opacity-40">
+            건너뛰기
+          </button>
+        )}
+        <button onClick={submit} disabled={busy || !pid}
+          className="bg-teal text-white font-semibold text-[14px] px-6 py-2.5 rounded-xl hover:bg-teal-600 transition-colors disabled:opacity-40">
           {busy ? "저장 중…" : "문진 저장 후 다음"}
         </button>
       </div>
