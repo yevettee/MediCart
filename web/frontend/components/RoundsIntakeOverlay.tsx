@@ -78,8 +78,10 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
     (async () => {
       let apid = "", name = "";
       try {
-        const rooms = await getRooms();
-        apid = (rooms[room] as { patient?: string } | undefined)?.patient ?? "";
+        // /api/rooms 응답은 { rooms: {...} } 형태 — MapView 와 동일하게 .rooms 로 접근.
+        const resp = await getRooms();
+        const roomsMap = (resp?.rooms as Record<string, { patient?: string }> | undefined) ?? {};
+        apid = roomsMap[room]?.patient ?? "";
         if (apid) { const ap = await getPatient(apid).catch(() => null); name = ap?.성명 ?? ""; }
       } catch { apid = ""; name = ""; }
       setAssigned({ pid: apid, name });
