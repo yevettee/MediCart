@@ -11,6 +11,7 @@ import RoundsIntakeOverlay from "./RoundsIntakeOverlay";
 // Mock @/lib/api — all names the component imports
 vi.mock("@/lib/api", () => ({
   pushMission: vi.fn().mockResolvedValue({ ok: true }),
+  startPatrol: vi.fn().mockResolvedValue({ ok: true, id: "m1" }),
   getPatrolPhase: vi.fn().mockResolvedValue({ phase: "starting", stop: {} }),
   sendPatrolAdvance: vi.fn().mockResolvedValue({ ok: true }),
   getRooms: vi.fn().mockResolvedValue({ rooms: {} }),
@@ -28,7 +29,7 @@ vi.mock("@/components/IntakeForm", () => ({
   default: () => <div data-testid="intake-form-stub" />,
 }));
 
-import { pushMission, getPatrolPhase } from "@/lib/api";
+import { pushMission, startPatrol, getPatrolPhase } from "@/lib/api";
 
 const stops = [
   { key: "t101_1", label: "101-1", room: "101-1", x: -4.2, y: -1.5, yaw: 0 },
@@ -51,17 +52,17 @@ describe("RoundsIntakeOverlay (B-TRIG-03 / B-PHASE-01)", () => {
       />
     );
     await waitFor(() =>
-      expect(pushMission).toHaveBeenCalledWith(
+      expect(startPatrol).toHaveBeenCalledWith(
         "robot3",
-        "patrol_intake_mission",
         expect.objectContaining({
           stops: expect.any(Array),
           home: dock,
         })
       )
     );
-    // Should only be called once for the mission trigger
-    expect(pushMission).toHaveBeenCalledTimes(1);
+    // 해피패스: startPatrol(깨끗한 시작) 1회, fallback pushMission 은 호출 안 됨
+    expect(startPatrol).toHaveBeenCalledTimes(1);
+    expect(pushMission).not.toHaveBeenCalled();
   });
 
   it("B-TRIG-03: stops 페이로드는 {x,y,yaw,room,label} 형태로 매핑됨", async () => {
@@ -74,9 +75,9 @@ describe("RoundsIntakeOverlay (B-TRIG-03 / B-PHASE-01)", () => {
         onExit={() => {}}
       />
     );
-    await waitFor(() => expect(pushMission).toHaveBeenCalled());
-    const callArgs = (pushMission as ReturnType<typeof vi.fn>).mock.calls[0];
-    const payload = callArgs[2] as { stops: unknown[]; home: unknown };
+    await waitFor(() => expect(startPatrol).toHaveBeenCalled());
+    const callArgs = (startPatrol as ReturnType<typeof vi.fn>).mock.calls[0];
+    const payload = callArgs[1] as { stops: unknown[]; home: unknown };
     expect(payload.stops).toHaveLength(1);
     expect(payload.stops[0]).toMatchObject({
       x: -4.2,
@@ -114,6 +115,7 @@ describe("RoundsIntakeOverlay (B-TRIG-03 / B-PHASE-01)", () => {
     );
     // Wait a tick to confirm no async calls were dispatched
     await new Promise((r) => setTimeout(r, 50));
+    expect(startPatrol).not.toHaveBeenCalled();
     expect(pushMission).not.toHaveBeenCalled();
   });
 
