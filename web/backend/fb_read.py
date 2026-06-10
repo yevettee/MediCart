@@ -52,6 +52,7 @@ def topics_to_snapshot(node):
             snap[field] = node[topic]
     has_topic = bool(snap)
     snap["mode"] = node.get("robot_mode", "idle")
+    snap["nurse_cart_phase"] = (node.get("nurse_cart") or {}).get("phase", "idle")
     snap["online"] = bool(node.get("online", False))
     snap["stamp"] = node.get("stamp", 0)
     # 센서 토픽이 하나도 없고 stamp 도 없으면(예: cmd 만 있는 노드) 미존재로 취급
@@ -136,6 +137,7 @@ MISSION_ACTIONS = ("shutdown", "reboot", "ros_restart", "dock", "undock",
                    "nurse_cart_mission")                                    # 시스템(momentary)
 MODE_ACTIONS = ("start", "stop", "clear")                                   # 모드 중재(continuous)
 MODE_NAMES = ("round", "patrol", "errand", "guide", "intake")               # mission_manager 모드
+SEQUENCE_ACTIONS = ("patrol_mission", "nurse_cart_mission")                 # 시나리오 시퀀서
 
 
 def valid_robot_ns(ns):
@@ -162,8 +164,10 @@ def _validate_goto_params(params):
 def mission_payload(action, params, ts, mode=None):
     """{ns}/mission_pool 에 push 될 명령(화이트리스트 검증).
 
-    두 종류: 시스템 액션(dock/undock/…, mode 없음) 또는 모드 액션(start/stop/clear + mode).
-    clear 는 mode 불요(전체 모드 해제).
+    세 종류:
+      · 시스템 액션(dock/undock/…, mode 없음)
+      · 모드 액션(start/stop/clear + mode)
+      · 시퀀서 액션(patrol_mission/nurse_cart_mission — params 는 선택적 좌표 오버라이드)
     """
     if action in MISSION_ACTIONS:
         return {"action": action, "params": params or {}, "status": "pending", "ts": int(ts)}
@@ -177,6 +181,9 @@ def mission_payload(action, params, ts, mode=None):
         if mode:
             out["mode"] = mode
         return out
+    if action in SEQUENCE_ACTIONS:
+        # params 는 선택 — 없으면 ROS 시퀀서가 내부 기본값 사용
+        return {"action": action, "params": params or {}, "status": "pending", "ts": int(ts)}
     raise ValueError("invalid action")
 
 
@@ -581,4 +588,41 @@ def set_display_patient(pid: str):
     db.reference("display").update({
         "current_patient": pid,
         "updated_at": int(time.time() * 1000),
+    })
+
+
+def get_expected_room() -> str:
+    """display/expected_room — 로봇이 현재 도착해 있는 병상 id. 없으면 빈문자열.
+
+    patrol 도착 시 display_bridge 가 /identify/start(room_id) 를 받아 기록한다.
+    카트 iPad QR 검증에서 '이 병상에 배정된 환자' 비교 기준으로 쓴다.
+    """
+    val = _init().reference("display/expected_room").get()
+    return str(val) if val else ""
+
+
+def set_expected_room(room: str):
+    """현재 병상 id 를 display/expected_room 에 기록(로봇 도착 트리거용)."""
+    _init().reference("display").update({
+        "expected_room": room,
+        "expected_at": int(time.time() * 1000),
+    })
+
+
+def room_assigned_patient(room: str) -> str:
+    """/rooms/{room}/patient — 그 병상에 배정된 환자 id. 없으면 빈문자열."""
+    if not room:
+        return ""
+    val = _init().reference(f"rooms/{room}/patient").get()
+    return str(val) if val else ""
+
+
+def set_intake_status(pid: str, status: str):
+    """순회 문진 결과를 환자에 기록. status: 'done'(문진완료) | 'absent'(부재중).
+
+    /patients/{id}/intake_status + intake_at(epoch ms). 매 순회마다 덮어써
+    '가장 최근 순회 결과'를 남긴다(간호사가 완료/부재중 구분용)."""
+    _init().reference(f"patients/{pid}").update({
+        "intake_status": status,
+        "intake_at": int(time.time() * 1000),
     })

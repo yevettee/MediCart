@@ -305,6 +305,66 @@ def display_set():
     return jsonify({"ok": True, "pid": pid})
 
 
+@app.get("/api/display/expected")
+def display_expected():
+    """현재 로봇이 도착한 병상(display/expected_room)과 그 배정환자 — 카트 iPad용."""
+    room = fb_read.get_expected_room()
+    assigned = fb_read.room_assigned_patient(room) if room else ""
+    ap = patient_store.get_patient(assigned) if assigned else None
+    return jsonify({"room": room, "assigned_patient": assigned,
+                    "assigned_name": (ap or {}).get("성명", "") if ap else ""})
+
+
+@app.post("/api/identify/verify")
+def identify_verify():
+    """스캔한 환자 QR 을 '현재 병상 배정환자'와 대조.
+
+    status:
+      identified    등록 환자 + 이 병상 배정환자와 일치 → 문진표 진행
+      mismatch      등록 환자지만 이 병상엔 다른 환자가 배정됨 → 거부 알림
+      unregistered  DB 미등록 QR → 거부
+      ok_no_room    병상 컨텍스트 없음(로봇 미도착/미배정) → 등록환자면 진행(폴백)
+    """
+    body = request.get_json(force=True, silent=True) or {}
+    pid = str(body.get("pid", "")).strip()
+    if not _PID_RE.match(pid):
+        return jsonify({"status": "unregistered", "error": "invalid id"}), 400
+    # room 은 명시 전달 우선, 없으면 로봇 도착 병상(expected_room).
+    room = str(body.get("room", "")).strip() or fb_read.get_expected_room()
+
+    if patient_store.get_patient(pid) is None:
+        return jsonify({"status": "unregistered", "pid": pid, "room": room})
+
+    assigned = fb_read.room_assigned_patient(room)
+    if not room or not assigned:
+        status = "ok_no_room"          # 병상/배정 정보 없음 → 등록환자로 통과(폴백)
+    elif assigned == pid:
+        status = "identified"
+    else:
+        status = "mismatch"
+
+    ap = patient_store.get_patient(assigned) if assigned else None
+    return jsonify({
+        "status": status, "pid": pid, "room": room,
+        "patient_name": (patient_store.get_patient(pid) or {}).get("성명", ""),
+        "assigned_patient": assigned,
+        "assigned_name": (ap or {}).get("성명", "") if ap else "",
+    })
+
+
+@app.post("/api/patients/<pid>/intake_status")
+def set_intake_status(pid):
+    """순회 문진 결과 기록 — status: 'done'(문진완료) | 'absent'(부재중)."""
+    if not _PID_RE.match(pid):
+        return jsonify({"error": "invalid id"}), 400
+    body = request.get_json(force=True, silent=True) or {}
+    status = str(body.get("status", "")).strip()
+    if status not in ("done", "absent"):
+        return jsonify({"error": "status must be done|absent"}), 400
+    fb_read.set_intake_status(pid, status)
+    return jsonify({"ok": True, "pid": pid, "status": status})
+
+
 # ── OCR ─────────────────────────────────────────────────────────────────────
 @app.post("/api/ocr")
 def api_ocr():

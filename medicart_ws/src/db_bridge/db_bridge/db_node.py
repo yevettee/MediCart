@@ -63,10 +63,45 @@ class DbNode(Node):
         self._refresh_pool('startup')
         self._fb.listen(self._pool_path, self._on_pool_event)   # RTDB 대기(listen)
 
+        # 간호사 카트 OCR 완료 신호 — RTDB {ns}/nurse_cart/ocr_done → ROS topic
+        self._ocr_done_pub = self.create_publisher(
+            String, f'/{self.ns}/nurse_cart/ocr_done', 10)
+        self._fb.listen(f'{self.ns}/nurse_cart/ocr_done', self._on_rtdb_ocr_done)
+
+        # 간호사 카트 회진 완료 신호 — RTDB {ns}/nurse_cart/round_done → ROS topic
+        self._round_done_pub = self.create_publisher(
+            String, f'/{self.ns}/nurse_cart/round_done', 10)
+        self._fb.listen(f'{self.ns}/nurse_cart/round_done', self._on_rtdb_round_done)
+
         self._timer = self.create_timer(period, self._tick)
         self.get_logger().info(
             f'[db_node] 준비 완료 — mission_pool=/{self._pool_path} 대기 중, '
             f'request=/{self.ns}/mission_request feedback=/{self.ns}/mission_feedback')
+
+    # ── RTDB 리스너 콜백 ─────────────────────────────────────────────────
+    def _on_rtdb_ocr_done(self, event):
+        """RTDB {ns}/nurse_cart/ocr_done 값이 true 로 바뀌면 ROS topic 발행 + 즉시 초기화."""
+        data = getattr(event, 'data', None)
+        if data not in (True, 'true', 1):
+            return
+        self.get_logger().info('[db_node] nurse_cart OCR 완료 신호 감지 → ROS topic 발행')
+        self._publish(self._ocr_done_pub, {'ocr_done': True, 'ts': _now_ms()})
+        try:
+            self._fb.write(f'{self.ns}/nurse_cart/ocr_done', False)
+        except Exception as exc:               # noqa: BLE001
+            self.get_logger().warn(f'[db_node] ocr_done RTDB 초기화 실패: {exc}')
+
+    def _on_rtdb_round_done(self, event):
+        """RTDB {ns}/nurse_cart/round_done 값이 true 로 바뀌면 ROS topic 발행 + 즉시 초기화."""
+        data = getattr(event, 'data', None)
+        if data not in (True, 'true', 1):
+            return
+        self.get_logger().info('[db_node] nurse_cart 회진 완료 신호 감지 → ROS topic 발행')
+        self._publish(self._round_done_pub, {'round_done': True, 'ts': _now_ms()})
+        try:
+            self._fb.write(f'{self.ns}/nurse_cart/round_done', False)
+        except Exception as exc:               # noqa: BLE001
+            self.get_logger().warn(f'[db_node] round_done RTDB 초기화 실패: {exc}')
 
     # ── RTDB 동기화 ──────────────────────────────────────────────────────
     def _refresh_pool(self, reason):
@@ -162,6 +197,13 @@ class DbNode(Node):
                                  'updated_ts': _now_ms()})
             except Exception as exc:                   # noqa: BLE001
                 self.get_logger().warn(f'[db_node] progress 기록 실패 id={mid}: {exc}')
+            # 간호사 카트 약품실 도착 신호 → RTDB /{ns}/nurse_cart/phase=arrived
+            if cur.get('action') == 'nurse_cart_mission' and detail == 'pharmacy_arrived':
+                try:
+                    self._fb.write(f'{self.ns}/nurse_cart/phase', 'arrived')
+                    self.get_logger().info('[db_node] nurse_cart phase=arrived → RTDB 기록')
+                except Exception as exc:               # noqa: BLE001
+                    self.get_logger().warn(f'[db_node] nurse_cart phase 기록 실패: {exc}')
             self._last_event = f'{status} {mid}'
         elif status in ('done', 'failed'):
             self._finish(mid, status, detail)
@@ -183,6 +225,12 @@ class DbNode(Node):
             self._fb.delete(f'{self._pool_path}/{mid}')        # order 비움
         except Exception as exc:                       # noqa: BLE001
             self.get_logger().error(f'[db_node] finish RTDB 오류 id={mid}: {exc}')
+        # 간호사 카트 임무 종료 시 RTDB phase 초기화 → 웹 리디렉트 트리거 해제
+        if action == 'nurse_cart_mission':
+            try:
+                self._fb.write(f'{self.ns}/nurse_cart/phase', 'idle')
+            except Exception as exc:                   # noqa: BLE001
+                self.get_logger().warn(f'[db_node] nurse_cart phase 초기화 실패: {exc}')
         self._last_event = f'{status} {action}({mid})'
         # rclpy 로거는 '같은 호출 위치'에서 심각도를 바꾸면 예외 → info/error 를 별도 라인으로.
         finish_msg = (f'[db_node] ■ FINISH id={mid} action={action} status={status} '

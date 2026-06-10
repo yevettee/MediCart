@@ -20,6 +20,7 @@ setup(
     entry_points={
         'console_scripts': [
             'identifier_node = patient_identifier.identifier_node:main',
+            'webcam_node = patient_identifier.webcam_node:main',
         ],
     },
 )

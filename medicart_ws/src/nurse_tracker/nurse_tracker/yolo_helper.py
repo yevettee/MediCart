@@ -47,8 +47,11 @@ class YoloHelper:
             source = str(model_path)   # yolov8n.pt 같은 기본 이름
 
         try:
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
             model = YOLO(source)
-            self._log(f"YOLO 모델 로드 완료: {source}")
+            model.to(device)
+            self._log(f"YOLO 모델 로드 완료: {source} (device={device})")
             return model
         except Exception as e:
             self._log(f"YOLO 로드 실패: {e} → 미탐지 모드")

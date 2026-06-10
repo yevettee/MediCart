@@ -87,6 +87,7 @@ export type AmrSnapshot = {
   dock?: { is_docked: boolean };
   imu?: { yaw_rate: number };
   mode?: string;
+  nurse_cart_phase?: string;
   state?: string;
   online?: boolean;
   scan?: { angle_min: number; angle_inc: number; range_max: number; ranges: (number | null)[] };
@@ -255,6 +256,42 @@ export async function setDisplayPatient(pid: string): Promise<{ ok: boolean; pid
     body: JSON.stringify({ pid }),
   });
   if (!r.ok) throw new Error(`/api/display/current → ${r.status}`);
+  return r.json();
+}
+
+
+// 순회 문진: 스캔 환자 vs 현재 병상 배정환자 대조.
+//   identified  배정환자와 일치 → 문진 진행
+//   mismatch    이 병상엔 다른 환자 배정 → 거부
+//   unregistered DB 미등록 QR
+//   ok_no_room  병상/배정 정보 없음 → 등록환자면 통과(폴백)
+export type VerifyResult = {
+  status: "identified" | "mismatch" | "unregistered" | "ok_no_room";
+  pid: string; room: string;
+  patient_name: string; assigned_patient: string; assigned_name: string;
+};
+
+export async function verifyIdentify(pid: string, room?: string): Promise<VerifyResult> {
+  const r = await fetch(`${API_BASE}/api/identify/verify`, {
+    method: "POST", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pid, room: room ?? "" }),
+  });
+  return r.json();
+}
+
+// 현재 로봇 도착 병상(expected_room)과 배정환자 — 명시 room 조회는 verifyIdentify 사용.
+export const getExpected = () =>
+  getJSON<{ room: string; assigned_patient: string; assigned_name: string }>("/api/display/expected");
+
+// 순회 문진 결과 기록. status: 'done'(문진완료) | 'absent'(부재중).
+export async function setIntakeStatus(pid: string, status: "done" | "absent") {
+  const r = await fetch(`${API_BASE}/api/patients/${pid}/intake_status`, {
+    method: "POST", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  if (!r.ok) throw new Error(`intake_status → ${r.status}`);
   return r.json();
 }
 
