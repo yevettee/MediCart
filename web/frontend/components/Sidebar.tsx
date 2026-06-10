@@ -8,8 +8,6 @@ import { NAV_ROLES, roleAtLeast, ROLE_LABEL, landingFor, type Role } from "@/lib
 const NAV = [
   { href: "/", label: "홈", sub: "메뉴", icon: HomeIcon, exact: true },
   { href: "/console", label: "관리자 콘솔", sub: "관제·제어·디버그", icon: MapIcon },
-  { href: "/control", label: "로봇 제어", sub: "모드·명령·미션", icon: ControlIcon },
-  { href: "/map", label: "지도", sub: "실시간 위치", icon: MapPageIcon },
   { href: "/patients", label: "환자 정보", sub: "회진 보조", icon: PatientIcon },
   { href: "/intake", label: "문진표", sub: "작성·저장", icon: FormIcon },
   { href: "/ocr", label: "처치실", sub: "투약 준비·검증", icon: FormIcon },
@@ -148,12 +146,4 @@ function QrIcon() {
 function DebugIcon() {
   return (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <rect x="4" y="9" width="16" height="10" rx="2" /><path d="M9 9V6a3 3 0 0 1 6 0v3M8 14h.01M12 14h.01M16 14h.01" /></svg>);
-}
-function ControlIcon() {
-  return (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" /></svg>);
-}
-function MapPageIcon() {
-  return (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="11" r="3" /><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" /></svg>);
 }

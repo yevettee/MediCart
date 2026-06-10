@@ -7,41 +7,31 @@ const POLL_MS = 2000;
 export default function DisplayPage() {
   const router = useRouter();
   const prevPidRef = useRef("");
-  const prevPhaseRef = useRef("");
 
-  /* Firebase 폴링 ①QR 스캔 → 문진표 이동 ②nurse_cart 약품실 도착 → 로그인(+/ocr 리디렉트) */
+  /* Firebase 폴링 → 새 QR 스캔 감지 시 문진표 입력 페이지로 자동 이동 */
   useEffect(() => {
-    let pidInitialized = false;
+    let initialized = false;
 
     async function poll() {
-      // ── QR 스캔 폴링 ─────────────────────────────────────────────────
       try {
         const r = await fetch("/api/display/patient", { cache: "no-store" });
-        if (r.ok) {
-          const { pid } = await r.json();
-          if (!pidInitialized) {
-            pidInitialized = true;
-            prevPidRef.current = pid ?? "";
-          } else if (pid && pid !== prevPidRef.current) {
-            prevPidRef.current = pid;
-            router.push(`/intake?pid=${pid}`);
-          }
-        }
-      } catch { /* 네트워크 오류 무시 */ }
+        if (!r.ok) return;
+        const { pid } = await r.json();
 
-      // ── 간호사 카트 약품실 도착 폴링 ─────────────────────────────────
-      // /api/nurse_cart/phase 는 인증 불필요(auth.py _OPEN) — 공용 화면에서 폴링 가능
-      try {
-        const r = await fetch("/api/nurse_cart/phase", { cache: "no-store" });
-        if (r.ok) {
-          const { phase } = await r.json();
-          if (phase === "arrived" && prevPhaseRef.current !== "arrived") {
-            // 비밀번호 입력 후 바로 /ocr 로 이동하도록 next 파라미터 전달
-            router.push("/login?next=/ocr");
-          }
-          prevPhaseRef.current = phase ?? "idle";
+        if (!initialized) {
+          // 첫 폴링: 현재 Firebase pid를 기준선으로 기록만 (즉시 이동 안 함)
+          initialized = true;
+          prevPidRef.current = pid ?? "";
+          return;
         }
-      } catch { /* 네트워크 오류 무시 */ }
+
+        if (pid && pid !== prevPidRef.current) {
+          prevPidRef.current = pid;
+          router.push(`/intake?pid=${pid}`);
+        }
+      } catch {
+        // 네트워크 오류 무시
+      }
     }
 
     poll();

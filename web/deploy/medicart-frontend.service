@@ -8,9 +8,9 @@ WorkingDirectory=/home/rokey/MediCart/web/frontend
 Environment=NODE_ENV=production
 # INTEL_AUTH_TOKEN(쿠키 검증용) 등은 .env에서 주입 — 소스에 토큰 하드코딩 금지.
 EnvironmentFile=/home/rokey/MediCart/web/backend/.env
-# .env 의 PORT=5000(백엔드용)을 프론트 3000으로 덮어쓴다 — EnvironmentFile 뒤에 와야 우선함.
+# .env 의 PORT=5000(백엔드용)이 Next에 새지 않도록, 리슨 포트를 CLI 인자로 못박는다(env보다 우선).
 Environment=PORT=3000
-ExecStart=/usr/bin/npm run start
+ExecStart=/usr/bin/npm run start -- -p 3000
 Restart=on-failure
 RestartSec=3
 

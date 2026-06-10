@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# intel.thatshoon.com 호스팅 셋업 — `cloudflared tunnel login` 완료 후 실행.
+# intel2.thatshoon.com 호스팅 셋업 — `cloudflared tunnel login` 완료 후 실행.
 # 터널 생성 → config 작성 → DNS 라우트 → 프론트 prod 빌드 → systemd 3서비스 기동.
 # MediCart standalone(intel1 비의존). NS/맵은 MediCart/common 에서 가져온다.
 set -euo pipefail
 
-HOST=intel.thatshoon.com
-NAME=intel
+HOST=intel2.thatshoon.com
+NAME=intel2
 REPO=/home/rokey/MediCart
 ROBOT_ENV=/home/rokey/MediCart/common/robot.env
 CF="$HOME/.cloudflared"

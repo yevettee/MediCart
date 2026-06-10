@@ -18,9 +18,6 @@ export function requiredRoleForRoute(path: string): Role {
 export const NAV_ROLES: Record<string, Role> = {
   "/": "admin",
   "/console": "admin",
-  "/control": "admin",
-  "/map": "admin",
-  "/debug": "admin",
   "/patients": "staff",
   "/intake": "patient",
   "/ocr": "staff",
