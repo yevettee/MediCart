@@ -115,7 +115,7 @@ export function isLive(stamp?: number, thresholdMs = 3000): boolean {
 }
 
 /** 도킹 중인 로봇의 pose(=amcl_pose) 가 그 로봇의 홈. 미도킹·pose 없음·null → null. */
-export function robotHome(snap: AmrSnapshot): { x: number; y: number; yaw?: number } | null {
+export function robotHome(snap: AmrSnapshot): { x: number; y: number; yaw: number } | null {
   if (snap && snap.dock?.is_docked && snap.pose) {
     return { x: snap.pose.x, y: snap.pose.y, yaw: snap.pose.yaw };
   }
