@@ -1,8 +1,10 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { API_BASE, getPatient, markIntakeDone, pushMission, resetIntakeRound, type GotoTarget } from "@/lib/api";
-import { nearestArrival, type ArrivalTarget, type Pt } from "@/lib/follow";
-import { PATROL_STOPS, decideAfterScan, nextStop } from "@/lib/patrol";
+import {
+  getPatient, getRooms, markIntakeDone, pushMission, resetIntakeRound,
+  getPatrolPhase, sendPatrolAdvance, type GotoTarget,
+} from "@/lib/api";
+import { PATROL_STOPS, STOP_ROOMS, decideAfterScan, nextStop } from "@/lib/patrol";
 import { useQrScanner } from "@/lib/useQrScanner";
 import IntakeForm from "@/components/IntakeForm";
 
@@ -11,6 +13,7 @@ const QR_WAIT_MS = 60_000;       // 호실당 QR 대기
 const TIMEOUT_DWELL_MS = 5_000;  // 시간초과 메시지 후 다음 호실
 const MSG_DWELL_MS = 2_500;      // intro / skip 메시지
 const ARRIVE_TIMEOUT_MS = 90_000;
+const POLL_MS = 1_000;           // patrol/phase 폴링 주기
 
 type Step =
   | "intro" | "moving" | "moveDelay" | "scanning"
@@ -21,19 +24,24 @@ type Props = { active: boolean; ns: string; targets: Record<string, GotoTarget>;
 export default function PatrolIntakeOverlay({ active, ns, targets, onExit }: Props) {
   const [step, setStep] = useState<Step>("intro");
   const [idx, setIdx] = useState(0);
-  const [pose, setPose] = useState<Pt | undefined>();
-  const [isDocked, setIsDocked] = useState<boolean | undefined>();
   const [pid, setPid] = useState<string>("");
   const [note, setNote] = useState<string>("");
   const stepRef = useRef<Step>("intro");
   stepRef.current = step;
   const idxRef = useRef(0);
   idxRef.current = idx;
+  const lastArrivedRef = useRef<number>(-1);   // 처리한 도착 idx(중복 방지)
 
   const stopKey = PATROL_STOPS[idx];
   const stopTarget = targets[stopKey];
   const stopLabel = stopTarget?.label ?? `정류장 ${idx + 1}`;
   const dock = targets["dock"] ?? { label: "도크", x: -8, y: -6, yaw: 0 };
+
+  // 순회 정차 목록(patrol_intake_mission params) — targets 없는 정류장은 제외.
+  const buildStops = useCallback(() => PATROL_STOPS.flatMap((key) => {
+    const t = targets[key];
+    return t ? [{ x: t.x, y: t.y, yaw: t.yaw ?? 0, room: STOP_ROOMS[key] ?? "", label: t.label ?? key }] : [];
+  }), [targets]);
 
   // QR 디코드 → 환자 분기 (scanning 단계에서만)
   const onDecode = useCallback(async (raw: string) => {
@@ -42,6 +50,16 @@ export default function PatrolIntakeOverlay({ active, ns, targets, onExit }: Pro
     if (stepRef.current !== "scanning") return;   // await 중 단계 이탈 시 늦은 디코드 폐기
     const decision = decideAfterScan(p);
     if (decision === "unknown") { setNote(`등록되지 않은 QR: ${raw}`); return; }
+    // 병상 배정환자 대조 — 이 병상 환자가 아니면 거부하고 계속 스캔.
+    const room = STOP_ROOMS[PATROL_STOPS[idxRef.current]];
+    if (room) {
+      try {
+        const rooms = await getRooms();
+        if (stepRef.current !== "scanning") return;
+        const assigned = (rooms[room] as { patient?: string } | undefined)?.patient;
+        if (assigned && assigned !== raw) { setNote(`이 병상(${room}) 환자가 아닙니다`); return; }
+      } catch { /* 대조 실패 시 통과(폴백) */ }
+    }
     setPid(raw);
     if (decision === "skip") { setNote(`${p?.성명 ?? raw} — 이미 문진 완료`); setStep("skip"); }
     else { setNote(""); setStep("intake"); }
@@ -49,61 +67,69 @@ export default function PatrolIntakeOverlay({ active, ns, targets, onExit }: Pro
 
   const { videoRef, camOn, camErr, start: startCam, stop: stopCam } = useQrScanner(onDecode);
 
-  // 활성화 시 1회 초기화 (SSE 재연결과 무관 — onopen 에 두면 재연결마다 순회가 리셋됨)
+  // 활성화 시 1회 초기화
   useEffect(() => {
     if (!active) return;
-    setStep("intro"); setIdx(0); setPid(""); setPose(undefined); setIsDocked(undefined); setNote("");
+    setStep("intro"); setIdx(0); setPid(""); setNote("");
+    lastArrivedRef.current = -1;
   }, [active]);
 
-  // SSE 자가 구독(active 동안). pose/dock 수신.
-  useEffect(() => {
-    if (!active) return;
-    const es = new EventSource(`${API_BASE}/api/stream`, { withCredentials: true });
-    es.onmessage = (e) => {
-      try {
-        const d = JSON.parse(e.data);
-        if (d?.source !== ns) return;
-        if (d.pose) setPose({ x: d.pose.x, y: d.pose.y });
-        if (d.dock) setIsDocked(d.dock.is_docked);
-      } catch { /* ignore */ }
-    };
-    return () => es.close();
-  }, [active, ns]);
+  // 도착 처리: 해당 병상에서 QR 스캔 시작
+  const arriveAt = useCallback((i: number) => {
+    if (i < 0 || i >= PATROL_STOPS.length) return;
+    lastArrivedRef.current = i;
+    setIdx(i); setNote(""); setPid("");
+    setStep("scanning");
+  }, []);
 
-  const advance = useCallback(() => {
-    const n = nextStop(idxRef.current, PATROL_STOPS.length);
-    if (n === "return") {
-      setStep("returning");
-      pushMission(ns, "goto", { x: dock.x, y: dock.y, yaw: dock.yaw ?? 0, dock_after: true }).catch(() => {});
-    } else {
-      setIdx(n); setNote(""); setPid(""); setStep("moving");
-    }
-  }, [ns, dock]);
-
-  // intro → 순회 시작(회차 리셋) → 첫 이동
+  // intro → 회차 리셋 + patrol_intake_mission 1건 발행(로봇이 undock→순회 자율 수행) → 이동
   useEffect(() => {
     if (!active || step !== "intro") return;
     let alive = true;
     resetIntakeRound().catch(() => {});
+    const stops = buildStops();
+    if (stops.length) {
+      pushMission(ns, "patrol_intake_mission",
+        { stops, home: { x: dock.x, y: dock.y, yaw: dock.yaw ?? 0 } }).catch(() => {});
+    }
     const t = setTimeout(() => { if (alive) setStep("moving"); }, MSG_DWELL_MS);
     return () => { alive = false; clearTimeout(t); };
-  }, [active, step]);
+  }, [active, step]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // moving → goto 발행 + 도착(반경) 대기 + 지연 워치독
+  // 폴링: RTDB patrol/phase 로 도착·복귀완료 감지 (pose 근접 추측 대체)
+  useEffect(() => {
+    if (!active) return;
+    const poll = async () => {
+      try {
+        const p = await getPatrolPhase();
+        if (stepRef.current === "returning") {
+          if (p.phase === "idle") setStep("done");
+          return;
+        }
+        if (
+          p.phase === "arrived" && typeof p.stop?.idx === "number" &&
+          p.stop.idx !== lastArrivedRef.current && stepRef.current === "moving"
+        ) {
+          arriveAt(p.stop.idx);
+        }
+      } catch { /* 폴링 실패 무시 */ }
+    };
+    const t = setInterval(poll, POLL_MS);
+    return () => clearInterval(t);
+  }, [active, arriveAt]);
+
+  // moving 지연 워치독 → moveDelay (도착 신호 미수신 시 수동 폴백 노출)
   useEffect(() => {
     if (step !== "moving") return;
-    const tgt = targets[PATROL_STOPS[idxRef.current]];
-    if (tgt) pushMission(ns, "goto", { x: tgt.x, y: tgt.y, yaw: tgt.yaw ?? 0 }).catch(() => {});
     const wd = setTimeout(() => { if (stepRef.current === "moving") setStep("moveDelay"); }, ARRIVE_TIMEOUT_MS);
     return () => clearTimeout(wd);
-  }, [step, ns, targets]);
+  }, [step]);
 
-  // pose 갱신마다 현재 타겟 근접판정 → 도착 시 scanning
-  useEffect(() => {
-    if (step !== "moving" || !stopTarget) return;
-    const at: ArrivalTarget[] = [{ key: stopKey, label: stopLabel, x: stopTarget.x, y: stopTarget.y }];
-    if (nearestArrival(pose, at, null)) setStep("scanning");
-  }, [step, pose, stopTarget, stopKey, stopLabel]);
+  // 로봇 미연결/지연 폴백: 수동으로 다음 병상 도착 처리
+  const manualArrive = useCallback(() => {
+    const n = lastArrivedRef.current + 1;   // 최초 -1 → 0
+    if (n < PATROL_STOPS.length) arriveAt(n);
+  }, [arriveAt]);
 
   // scanning 진입 시 카메라 ON + 60s 타임아웃, 떠날 때 카메라 OFF
   useEffect(() => {
@@ -114,6 +140,14 @@ export default function PatrolIntakeOverlay({ active, ns, targets, onExit }: Pro
     return () => { clearTimeout(to); stopCam(); };
   }, [step, startCam, stopCam]);
 
+  // 정차 종료 → 핸드셰이크(intake_done) → 로봇이 다음 병상/복귀로 진행
+  const advance = useCallback(() => {
+    sendPatrolAdvance().catch(() => {});
+    const n = nextStop(idxRef.current, PATROL_STOPS.length);
+    if (n === "return") setStep("returning");        // 로봇 홈 복귀 → phase=idle 대기
+    else { setIdx(n); setNote(""); setPid(""); setStep("moving"); }  // 다음 도착 신호 대기
+  }, []);
+
   // skip / timeout 메시지 후 다음 정류장
   useEffect(() => {
     if (step !== "skip" && step !== "timeout") return;
@@ -122,10 +156,7 @@ export default function PatrolIntakeOverlay({ active, ns, targets, onExit }: Pro
     return () => clearTimeout(t);
   }, [step, advance]);
 
-  // returning 완료(도킹) → done → 닫기
-  useEffect(() => {
-    if (step === "returning" && isDocked === true) setStep("done");
-  }, [step, isDocked]);
+  // returning 완료(phase=idle) → done → 닫기
   useEffect(() => { if (step === "done") onExit(); }, [step, onExit]);
 
   const onIntakeSaved = useCallback(() => {
@@ -134,11 +165,12 @@ export default function PatrolIntakeOverlay({ active, ns, targets, onExit }: Pro
     advance();
   }, [pid, advance]);
 
+  // 중단: 핸드셰이크로 현재 정차를 빠져나가 로봇이 복귀하도록 + UI 복귀 대기.
+  // (완전 취소는 시퀀서 cancel 지원 필요 — 후속 과제)
   const abort = useCallback(() => {
     pushMission(ns, "mission_cancel", {}).catch(() => {});
     setStep("returning");
-    pushMission(ns, "goto", { x: dock.x, y: dock.y, yaw: dock.yaw ?? 0, dock_after: true }).catch(() => {});
-  }, [ns, dock]);
+  }, [ns]);
 
   if (!active) return null;
 
@@ -169,7 +201,10 @@ export default function PatrolIntakeOverlay({ active, ns, targets, onExit }: Pro
             <div className="text-[clamp(40px,9vw,120px)] font-bold leading-tight">{bigText(step, stopLabel, note)}</div>
             <div className="text-[clamp(14px,2vw,22px)] text-white/60 mt-4">{ns.toUpperCase()} · 순회 문진</div>
             {step === "moveDelay" && (
-              <button onClick={() => setStep("moving")} className="mt-6 px-6 py-3 rounded-2xl bg-white text-[#0b1f1d] font-semibold">이동 재시도</button>
+              <div className="mt-6 flex gap-3 justify-center">
+                <button onClick={() => setStep("moving")} className="px-6 py-3 rounded-2xl bg-white/15 hover:bg-white/25 font-semibold">다시 대기</button>
+                <button onClick={manualArrive} className="px-6 py-3 rounded-2xl bg-white text-[#0b1f1d] font-semibold">수동 도착 처리</button>
+              </div>
             )}
           </div>
         </div>
@@ -188,7 +223,7 @@ function bigText(step: Step, stopLabel: string, note: string): string {
   switch (step) {
     case "intro": return "순회 문진을 가동합니다.";
     case "moving": return `${stopLabel}(으)로 이동 중…`;
-    case "moveDelay": return "이동 지연 — 위치 확인";
+    case "moveDelay": return "이동 지연 — 도착 신호 대기 중";
     case "skip": return note || "이미 문진 완료 — 다음 호실로";
     case "timeout": return "시간 초과 — 다음 호실로 이동합니다";
     case "returning": return "복귀 중…";

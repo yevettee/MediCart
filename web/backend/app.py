@@ -410,6 +410,23 @@ def patrol_intake_done():
     return jsonify({"ok": False, "error": "invalid pid"}), 400
 
 
+# ── 순회 문진 하이브리드 핸드셰이크 (로봇 정차↔웹) ─────────────────────────────
+@app.get("/api/patrol/phase")
+def patrol_phase():
+    """로봇 도착 상태 조회 — 웹 PatrolIntakeOverlay 폴링용. {phase, stop} 반환."""
+    return jsonify(fb_read.get_patrol_phase())
+
+
+@app.post("/api/patrol/advance")
+def patrol_advance():
+    """정차 종료 신호 — 로봇이 다음 병상(또는 복귀)으로 진행하도록 핸드셰이크."""
+    try:
+        fb_read.set_patrol_advance()
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True})
+
+
 @app.get("/api/map")
 def map_meta():
     if not (MAP_YAML and os.path.exists(MAP_YAML) and os.path.exists(MAP_PNG)):

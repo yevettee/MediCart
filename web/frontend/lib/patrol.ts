@@ -3,6 +3,12 @@
 // 정류장 키(= /api/targets 의 키). 라벨은 targets 에서 가져온다.
 export const PATROL_STOPS = ["t101_1", "t101_2"] as const;
 
+// 정류장 키 → /rooms 병상 id (배정환자 대조용). 라벨과 별개.
+export const STOP_ROOMS: Record<string, string> = {
+  t101_1: "101-A",
+  t101_2: "101-B",
+};
+
 // 스캔된 환자 → 다음 동작 분기.
 //   intake : 문진표로 (intake_done=false 또는 미설정)
 //   skip   : 다음 호실 (intake_done=true)
