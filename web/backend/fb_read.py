@@ -541,8 +541,8 @@ def targets_seed():
         "t101_2": {"label": "101호 2번", "x": -4.21788, "y": -1.58667, "yaw": -2.63024},
         "t102":   {"label": "102호 호출", "x": -3.94329, "y": -3.34683, "yaw": -3.1113},
         "pharmacy": {"label": "약품실", "x": -0.302782, "y": -3.3757, "yaw": -0.0545105},
-        "dock":   {"label": "Docking Station", "x": -0.354229, "y": -0.118972,
-                   "yaw": -0.0042011, "dock_after": True},
+        "dock":   {"label": "Docking Station", "x": -0.350975, "y": -1.10605,
+                   "yaw": 0.00228335, "dock_after": True},
     }
 
 

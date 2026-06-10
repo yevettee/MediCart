@@ -11,6 +11,7 @@ import RoundsIntakeOverlay, { type RoundStop } from "@/components/RoundsIntakeOv
 const ROUND_MAP = [
   { targetKey: "t101_1", room: "101-A", label: "101호 1번" },
   { targetKey: "t101_2", room: "101-B", label: "101호 2번" },
+  { targetKey: "t102_1", room: "102-A", label: "102호 1번" },
 ];
 
 type Banner = {
