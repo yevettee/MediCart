@@ -216,14 +216,10 @@ export async function setOcrDone(ns = "robot6"): Promise<void> {
 // ── 시나리오 B — 간호사 카트 (nurse_cart) 트리거 ──────────────────────────────
 export type NurseCartPhase = "idle" | "arrived" | "tracking" | "done";
 
-/** 카트 출발 (admin) — 미션 시작. 로봇: 약품실 이동 → OCR 대기. */
-export async function startNurseCartMission(): Promise<{ ok: boolean }> {
-  const r = await fetch(`${API_BASE}/api/missions`, {
-    method: "POST", credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "nurse_cart_mission" }),
-  });
-  if (!r.ok) throw new Error(`/api/missions → ${r.status}`);
+/** 회진 시작 (staff) — 시나리오 B 전체(약품실→OCR→추종→홈 복귀·도킹). */
+export async function startRound(): Promise<{ ok: boolean }> {
+  const r = await fetch(`${API_BASE}/api/nurse_cart/start`, { method: "POST", credentials: "include" });
+  if (!r.ok) throw new Error(`/api/nurse_cart/start → ${r.status}`);
   return r.json();
 }
 

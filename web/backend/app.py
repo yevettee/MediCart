@@ -349,6 +349,17 @@ def nurse_cart_ocr_done():
     return jsonify({"ok": True})
 
 
+@app.post("/api/nurse_cart/start")
+def nurse_cart_start():
+    """회진 시작 (staff) — nurse_cart_mission push. 약품실→OCR→추종→홈 복귀·도킹.
+    /api/missions(admin)와 달리 action 이 nurse_cart_mission 으로 고정돼 staff 에 안전."""
+    try:
+        mid, _ = fb_read.push_mission(fb_read.PRIMARY_NS, "nurse_cart_mission")
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "id": mid})
+
+
 @app.post("/api/nurse_cart/round_done")
 def nurse_cart_round_done():
     """회진 종료 (staff) → {ns}/nurse_cart/round_done = true. 로봇: 추종 중지·홈 도킹."""

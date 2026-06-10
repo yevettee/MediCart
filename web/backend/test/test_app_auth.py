@@ -128,3 +128,13 @@ def test_nurse_cart_phase_public(monkeypatch):
     client.set_cookie("intel_auth", "")           # 비로그인도 허용
     r = client.get("/api/nurse_cart/phase")
     assert r.status_code == 200 and r.get_json()["phase"] == "tracking"
+
+
+def test_nurse_cart_start_staff(monkeypatch):
+    monkeypatch.setattr(flask_app.fb_read, "push_mission",
+                        lambda ns, action, *a, **k: ("mid-nc", {"action": action}))
+    client.set_cookie("intel_auth", "")           # 비로그인 → 거부
+    assert client.post("/api/nurse_cart/start").status_code == 401
+    client.set_cookie("intel_auth", "STAFFTOK")    # staff 허용
+    r = client.post("/api/nurse_cart/start")
+    assert r.status_code == 200 and r.get_json()["ok"] is True
