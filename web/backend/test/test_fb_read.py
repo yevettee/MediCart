@@ -148,6 +148,14 @@ def test_valid_robot_ns():
     assert not valid_robot_ns("amr2") and not valid_robot_ns("../x")
 
 
+def test_valid_robot_ns_rejects_traversal_and_unknown():
+    """TC-X-RTDB-08(보강): 경로 조작·빈문자·미등록 ns 거부."""
+    from fb_read import valid_robot_ns
+    assert valid_robot_ns("robot3") and valid_robot_ns("robot6")
+    for bad in ("../x", "", "robot9", "robot3/..", "ROBOT3"):
+        assert not valid_robot_ns(bad), bad
+
+
 def test_list_missions_filters_meta_and_sorts():
     from fb_read import list_missions
     pool = {
