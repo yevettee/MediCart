@@ -192,6 +192,18 @@ def verify_injection(pid, inj_id):
     return jsonify({"ok": True, "match": match, "status": status, "reason": reason})
 
 
+@app.post("/api/patients/<pid>/injections/<inj_id>/confirm")
+def confirm_injection(pid, inj_id):
+    """QR 환자 확인 — 처방 완료를 DB에 직접 기록."""
+    if not _PID_RE.match(pid):
+        return jsonify({"error": "invalid id"}), 400
+    try:
+        fb_read.update_injection_status(pid, inj_id, "confirmed", "QR 환자 확인")
+    except Exception as e:                      # noqa: BLE001
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"ok": True, "status": "confirmed"})
+
+
 # ── AMR 상태/스트림 ──────────────────────────────────────────────────────────
 @app.get("/api/amrs")
 def amrs():
@@ -207,6 +219,41 @@ def stream():
 @app.get("/api/alerts")
 def alerts():
     return Response(fb_read.alert_stream(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.post("/api/robots/<ns>/missions/clear")
+def clear_robot_missions(ns):
+    fb_read.clear_missions(ns)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/robots/health")
+def robots_health():
+    return jsonify(fb_read.robots_health())
+
+
+@app.post("/api/camera/<ns>/request")
+def camera_request(ns):
+    body = request.get_json(silent=True) or {}
+    fb_read.camera_request(ns, bool(body.get("on")))
+    return jsonify({"ok": True})
+
+
+@app.get("/api/camera/<ns>/stream")
+def camera_stream(ns):
+    return Response(fb_read.camera_stream(ns), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/logs/<ns>")
+def robot_logs(ns):
+    return jsonify({"logs": fb_read.logs(ns)})
+
+
+@app.get("/api/logs/<ns>/stream")
+def robot_logs_stream(ns):
+    return Response(fb_read.log_stream(ns), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
@@ -246,40 +293,6 @@ def update_patient(pid):
 def display_current():
     pid = fb_read.get_display_patient()
     return jsonify({"pid": pid})
-
-
-@app.get("/api/nurse_cart/phase")
-def nurse_cart_phase():
-    """약품실 도착 상태 조회 — 인증 불필요(auth.py _OPEN). 약품실 공용 화면 폴링용."""
-    return jsonify({"phase": fb_read.get_nurse_cart_phase()})
-
-
-@app.post("/api/nurse_cart/ocr_done")
-def nurse_cart_ocr_done():
-    """OCR 완료 신호 전송 — staff 이상 필요. /ocr 페이지 완료 버튼에서 호출.
-
-    RTDB robot6/nurse_cart/ocr_done=true 를 기록하면 db_node 가 감지해
-    nurse_cart_sequencer 를 WAIT_OCR → GOTO_STANDBY 로 전이시킨다.
-    """
-    try:
-        fb_read.set_ocr_done()
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-    return jsonify({"ok": True})
-
-
-@app.post("/api/nurse_cart/round_done")
-def nurse_cart_round_done():
-    """회진 완료 신호 전송 — staff 이상 필요. 회진 종료 버튼에서 호출.
-
-    RTDB robot6/nurse_cart/round_done=true 를 기록하면 db_node 가 감지해
-    nurse_cart_sequencer 를 WAIT_ROUND_DONE → GOTO_HOME → DOCK 으로 전이시킨다.
-    """
-    try:
-        fb_read.set_round_done()
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-    return jsonify({"ok": True})
 
 
 @app.post("/api/display/current")
@@ -369,6 +382,49 @@ def api_ocr():
     return jsonify({"text": text})
 
 
+# ── 시나리오 B — 간호사 카트 (nurse_cart) 트리거 ──────────────────────────────
+@app.post("/api/missions")
+def create_mission():
+    """미션 시작 (admin) — '카트 출발' 등. body {action} → PRIMARY_NS mission_pool."""
+    body = request.get_json(force=True, silent=True) or {}
+    try:
+        mid, mission = fb_read.push_mission(fb_read.PRIMARY_NS, body.get("action"))
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "id": mid, "mission": mission})
+
+
+@app.post("/api/nurse_cart/ocr_done")
+def nurse_cart_ocr_done():
+    """OCR 완료 (staff) → {ns}/nurse_cart/ocr_done = true. 로봇: 입구 이동 후 추종 시작."""
+    fb_read.set_ocr_done(fb_read.PRIMARY_NS, True)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/nurse_cart/start")
+def nurse_cart_start():
+    """회진 시작 (staff) — nurse_cart_mission push. 약품실→OCR→추종→홈 복귀·도킹.
+    /api/missions(admin)와 달리 action 이 nurse_cart_mission 으로 고정돼 staff 에 안전."""
+    try:
+        mid, _ = fb_read.push_mission(fb_read.PRIMARY_NS, "nurse_cart_mission")
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "id": mid})
+
+
+@app.post("/api/nurse_cart/round_done")
+def nurse_cart_round_done():
+    """회진 종료 (staff) → {ns}/nurse_cart/round_done = true. 로봇: 추종 중지·홈 도킹."""
+    fb_read.set_round_done(fb_read.PRIMARY_NS, True)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/nurse_cart/phase")
+def nurse_cart_phase():
+    """로봇 현재 단계 (공개). idle | arrived | tracking | done."""
+    return jsonify({"phase": fb_read.get_nurse_cart_phase(fb_read.PRIMARY_NS)})
+
+
 # ── 로봇 명령 하달 (mission_pool, ROS 노드 통신 없음) ─────────────────────────
 @app.post("/api/robots/<ns>/missions")
 def robot_mission(ns):
@@ -398,6 +454,20 @@ def rooms():
     fb_read._init()
     from fb_read import _db
     return jsonify({"rooms": _db.reference("rooms").get() or {}})
+
+
+# ── 순회 문진 (회차 플래그) ───────────────────────────────────────────────────
+@app.post("/api/patrol/reset")
+def patrol_reset():
+    return jsonify({"ok": True, "count": fb_read.reset_intake_flags()})
+
+
+@app.post("/api/patrol/intake-done")
+def patrol_intake_done():
+    body = request.get_json(force=True, silent=True) or {}
+    if fb_read.mark_intake_done(str(body.get("pid") or "")):
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "invalid pid"}), 400
 
 
 @app.get("/api/map")

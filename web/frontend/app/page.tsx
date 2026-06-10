@@ -1,12 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { getAmrs, getTargets, getMe, type AmrSnapshot, type GotoTarget } from "@/lib/api";
+import { getAmrs, getTargets, getMe, startRound, type AmrSnapshot, type GotoTarget } from "@/lib/api";
+import { roleAtLeast, type Role } from "@/lib/auth";
 import { PRIMARY_NS } from "@/lib/config";
-import type { Role } from "@/lib/auth";
-import { startFollow } from "@/lib/followActions";
-import { type ArrivalTarget } from "@/lib/follow";
-import FollowOverlay from "@/components/FollowOverlay";
+import RoundOverlay from "@/components/RoundOverlay";
 import RoundsIntakeOverlay, { type RoundStop } from "@/components/RoundsIntakeOverlay";
 
 // 순회 문진 정차 매핑: 회진 타겟(정확 좌표) ↔ /rooms 키(배정환자).
@@ -16,31 +14,34 @@ const ROUND_MAP = [
 ];
 
 type Banner = {
-  href: string; title: string; sub: string; tone: string; soft: string;
+  href: string; title: string; sub: string; tone: string; soft: string; minRole: Role;
   icon: React.ReactNode; chip?: (s: { online: number; total: number }) => string | null;
 };
 
 const BANNERS: Banner[] = [
-  { href: "/map", title: "실시간 관제", sub: "AMR 위치·모드·LiDAR 실시간", tone: "#0ca39a", soft: "#e3f4f2",
-    icon: <MapGlyph />, chip: (s) => `AMR ${s.online}/${s.total} 연결` },
+  { href: "/console", title: "실시간 관제", sub: "AMR 위치·모드·LiDAR 실시간", tone: "#0ca39a", soft: "#e3f4f2",
+    minRole: "admin", icon: <MapGlyph />, chip: (s) => `AMR ${s.online}/${s.total} 연결` },
   { href: "/patients", title: "환자 정보", sub: "회진 보조 · 의사 1눈 파악", tone: "#2f74e0", soft: "#e7effb",
-    icon: <PatientGlyph /> },
+    minRole: "staff", icon: <PatientGlyph /> },
   { href: "/intake", title: "문진표", sub: "초진 종합 문진 작성·저장", tone: "#16a34a", soft: "#e4f6ea",
-    icon: <FormGlyph /> },
+    minRole: "patient", icon: <FormGlyph /> },
   { href: "/debug", title: "디버그", sub: "PC1·PC2 Redis 종합 시각화", tone: "#b0814a", soft: "#f4ecdf",
-    icon: <DebugGlyph /> },
+    minRole: "admin", icon: <DebugGlyph /> },
 ];
 
 export default function Home() {
   const [stat, setStat] = useState({ online: 0, total: 2 });
-  const [confirming, setConfirming] = useState(false);
-  const [followActive, setFollowActive] = useState(false);
-  const [starting, setStarting] = useState(false);
-  const [startWarn, setStartWarn] = useState<string | null>(null);
   const [targets, setTargets] = useState<Record<string, GotoTarget>>({});
   const [role, setRole] = useState<Role>("patient");
+  const [roundConfirm, setRoundConfirm] = useState(false);
+  const [roundActive, setRoundActive] = useState(false);
+  const [roundMsg, setRoundMsg] = useState<string | null>(null);
   const [roundsConfirm, setRoundsConfirm] = useState(false);
   const [roundsActive, setRoundsActive] = useState(false);
+
+  useEffect(() => {
+    getMe().then((m) => setRole(m.role)).catch(() => setRole("patient"));
+  }, []);
 
   useEffect(() => {
     const load = () =>
@@ -59,84 +60,63 @@ export default function Home() {
     getTargets().then((r) => setTargets(r.targets || {})).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    getMe().then((m) => setRole(m.role)).catch(() => setRole("patient"));
-  }, []);
-
-  const arrivalTargets: ArrivalTarget[] = ["pharmacy", "t101_1", "t101_2"]
-    .flatMap((k) => {
-      const t = targets[k];
-      return t ? [{ key: k, label: t.label, x: t.x, y: t.y }] : [];
-    });
   const dock = targets["dock"]
     ? { x: targets.dock.x, y: targets.dock.y, yaw: targets.dock.yaw }
     : { x: -8, y: -6, yaw: 0 };
 
-  // 순회 문진 정차 리스트 — 타겟 좌표 + /rooms 키.
+  // 순회 문진 정차 리스트 — 타겟 좌표 + /rooms 키(배정환자).
   const roundStops: RoundStop[] = ROUND_MAP.flatMap((m) => {
     const t = targets[m.targetKey];
     return t ? [{ key: m.targetKey, label: m.label, room: m.room, x: t.x, y: t.y, yaw: t.yaw }] : [];
   });
-  const isStaff = role === "staff" || role === "admin";
 
-  async function confirmStart() {
-    setConfirming(false);
-    setStartWarn(null);
-    let docked = true;
+  // 회진 시작(시나리오 B): nurse_cart_mission 발행 후 단계 인식 오버레이.
+  async function startRoundFlow() {
+    setRoundConfirm(false); setRoundMsg(null);
     try {
-      const a = await getAmrs();
-      docked = a[PRIMARY_NS]?.dock?.is_docked ?? true;
-    } catch { /* 기본 docked 가정 */ }
-    setFollowActive(true);
-    setStarting(true);
-    try {
-      const ok = await startFollow(PRIMARY_NS, docked);
-      if (!ok) setStartWarn("undock 시간초과 — 도크 상태 확인 필요");
+      await startRound();
+      setRoundActive(true);
     } catch {
-      setStartWarn("회진 시작 실패 — 다시 시도");
-    } finally {
-      setStarting(false);
+      setRoundMsg("회진 시작 실패 — 권한(의료진)·연결 확인");
     }
   }
 
+  // 비로그인(환자) — 환자 패널(문진 안내·시작). 회진/관제/디버그 미노출.
+  if (role === "patient") return <PatientPanel />;
+
   return (
     <div className="p-7 md:p-9 max-w-[1100px] mx-auto">
-      {!confirming ? (
+      {/* 회진 시작 (시나리오 B) — 약품실 OCR → 간호사 추종 → 복귀·도킹. staff+ */}
+      {roleAtLeast(role, "staff") && !roundConfirm ? (
         <button
-          onClick={() => setConfirming(true)}
+          onClick={() => { setRoundConfirm(true); setRoundMsg(null); }}
           className="w-full rounded-2xl px-7 py-6 mb-6 text-left text-white shadow-md flex items-center justify-between"
           style={{ background: "linear-gradient(90deg,#0ca39a,#0b7d76)" }}
         >
           <div>
-            <div className="text-[20px] font-bold">회진 모드 시작</div>
-            <div className="text-[13px] text-white/80 mt-1">AMR이 앞의 대상을 따라 병동을 회진합니다</div>
+            <div className="text-[20px] font-bold">회진 시작</div>
+            <div className="text-[13px] text-white/80 mt-1">
+              {roundMsg ?? "약품실 이동 → 약품 OCR → 간호사 추종 → 홈 복귀·도킹 (시나리오 B)"}
+            </div>
           </div>
           <span className="text-[26px]">▶</span>
         </button>
-      ) : (
+      ) : roleAtLeast(role, "staff") && roundConfirm ? (
         <div
           className="w-full rounded-2xl px-7 py-6 mb-6 text-white shadow-md flex items-center justify-between gap-4"
           style={{ background: "linear-gradient(90deg,#0ca39a,#0b7d76)" }}
         >
-          <div className="text-[15px] font-semibold">회진 모드를 시작할까요? (도크 상태면 자동 undock)</div>
+          <div className="text-[15px] font-semibold">회진을 시작할까요? (로봇이 약품실로 이동 → OCR → 추종 → 복귀·도킹)</div>
           <div className="flex gap-2 shrink-0">
-            <button onClick={confirmStart} className="px-5 py-2.5 rounded-xl bg-white text-[#0b7d76] font-semibold">확인</button>
-            <button onClick={() => setConfirming(false)} className="px-5 py-2.5 rounded-xl bg-white/20 font-semibold">취소</button>
+            <button onClick={startRoundFlow} className="px-5 py-2.5 rounded-xl bg-white text-[#0b7d76] font-semibold">확인</button>
+            <button onClick={() => setRoundConfirm(false)} className="px-5 py-2.5 rounded-xl bg-white/20 font-semibold">취소</button>
           </div>
         </div>
-      )}
-      <FollowOverlay
-        active={followActive}
-        ns={PRIMARY_NS}
-        targets={arrivalTargets}
-        dock={dock}
-        starting={starting}
-        startWarn={startWarn}
-        onExit={() => { setFollowActive(false); setStarting(false); setStartWarn(null); }}
-      />
+      ) : null}
+      <RoundOverlay active={roundActive} ns={PRIMARY_NS} onExit={() => setRoundActive(false)} />
 
-      {/* 순회 문진 모드 — 의료진(staff) 이상 전용 */}
-      {isStaff && (!roundsConfirm ? (
+      {/* 순회 문진 (로봇 자율 순회 + QR 배정환자 검증 + 문진/부재중) — 회진과 별개 시나리오. staff+ */}
+      {roleAtLeast(role, "staff") && (!roundsConfirm ? (
         <button
           onClick={() => setRoundsConfirm(true)}
           className="w-full rounded-2xl px-7 py-6 mb-6 text-left text-white shadow-md flex items-center justify-between"
@@ -175,7 +155,7 @@ export default function Home() {
       <p className="text-[14px] text-ink-2 mt-2">메뉴를 선택해 관제·환자·문진·디버그로 이동합니다.</p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-5 mt-7 rise">
-        {BANNERS.map((b) => {
+        {BANNERS.filter((b) => roleAtLeast(role, b.minRole)).map((b) => {
           const chip = b.chip?.(stat);
           return (
             <Link key={b.href} href={b.href}
@@ -201,6 +181,32 @@ export default function Home() {
             </Link>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function PatientPanel() {
+  return (
+    <div className="p-7 md:p-9 max-w-[680px] mx-auto">
+      <div className="card p-8 md:p-10 flex flex-col items-center text-center gap-5 rise">
+        <span className="grid place-items-center w-16 h-16 rounded-2xl text-white shadow-sm" style={{ background: "#16a34a" }}>
+          <FormGlyph />
+        </span>
+        <div>
+          <div className="eyebrow">환자 자가 문진</div>
+          <h1 className="text-[clamp(22px,4vw,30px)] font-bold mt-1.5">안녕하세요, 문진을 시작해 주세요</h1>
+          <p className="text-[14px] text-ink-2 mt-2.5 leading-relaxed">
+            진료 전 간단한 문진표를 작성하면 의료진이 더 빠르고 정확하게 도와드릴 수 있어요.<br />
+            아래 버튼을 눌러 문진을 시작하세요.
+          </p>
+        </div>
+        <Link href="/intake"
+          className="mt-1 inline-flex items-center gap-2 rounded-2xl px-7 py-3.5 text-white font-semibold shadow-md group"
+          style={{ background: "linear-gradient(90deg,#16a34a,#15803d)" }}>
+          문진 시작 <Arrow />
+        </Link>
+        <p className="text-[12px] text-ink-3 mt-1">의료진이신가요? 좌측 메뉴에서 로그인하세요.</p>
       </div>
     </div>
   );

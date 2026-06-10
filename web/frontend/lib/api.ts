@@ -43,7 +43,9 @@ export async function submitIntake(payload: { name: string; room?: string; secti
 }
 
 export async function logout() {
-  await fetch(`/api/auth/logout`, { method: "POST", credentials: "include" });
+  // 로그인과 동일 오리진(Flask)으로 — Flask set_cookie 와 같은 속성으로 delete_cookie 해야
+  // intel_auth 가 실제로 지워진다. (Next 자체 라우트로 지우면 다른 오리진이라 안 지워짐 → 즉시 재로그인 버그)
+  await fetch(`${API_BASE}/api/logout`, { method: "POST", credentials: "include" }).catch(() => {});
 }
 
 export type Patient = {
@@ -58,6 +60,7 @@ export type Patient = {
   "주 진료과"?: string;
   visits?: Visit[];
   intake?: unknown;
+  intake_done?: boolean;
   [k: string]: unknown;
 };
 
@@ -103,6 +106,25 @@ export async function saveMode(action: "start" | "stop" | "clear", mode: string,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, mode, params: params || {} }),
   });
+  return r.json();
+}
+
+// ── 순회 문진 회차 플래그 ────────────────────────────────────────────────────
+export async function resetIntakeRound(): Promise<{ ok: boolean; count: number }> {
+  const r = await fetch(`${API_BASE}/api/patrol/reset`, {
+    method: "POST", credentials: "include",
+  });
+  if (!r.ok) throw new Error(`/api/patrol/reset → ${r.status}`);
+  return r.json();
+}
+
+export async function markIntakeDone(pid: string): Promise<{ ok: boolean }> {
+  const r = await fetch(`${API_BASE}/api/patrol/intake-done`, {
+    method: "POST", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pid }),
+  });
+  if (!r.ok) throw new Error(`/api/patrol/intake-done → ${r.status}`);
   return r.json();
 }
 
@@ -153,6 +175,27 @@ export async function pushMission(
 
 export const getMissions = (ns: string) => getJSON<{ missions: Mission[] }>(`/api/robots/${ns}/missions`);
 
+export async function clearMissions(ns: string) {
+  const r = await fetch(`${API_BASE}/api/robots/${ns}/missions/clear`, {
+    method: "POST", credentials: "include",
+  });
+  return r.json() as Promise<{ ok: boolean; error?: string }>;
+}
+
+export type RobotHealth = {
+  ping_ok?: boolean; ping_ms?: number | null;
+  create3?: boolean; turtlebot4?: boolean; ip?: string; ts?: number;
+};
+export const getRobotsHealth = () => getJSON<Record<string, RobotHealth>>("/api/robots/health");
+
+export async function cameraRequest(ns: string, on: boolean) {
+  await fetch(`${API_BASE}/api/camera/${ns}/request`, {
+    method: "POST", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ on }),
+  }).catch(() => {});
+}
+
 export async function ocr(blob: Blob): Promise<{ text: string }> {
   const fd = new FormData();
   fd.append("image", blob, "capture.png");
@@ -160,6 +203,33 @@ export async function ocr(blob: Blob): Promise<{ text: string }> {
   if (!r.ok) throw new Error(`/api/ocr → ${r.status}`);
   return r.json();
 }
+
+// ── 시나리오 B — 간호사 카트 (nurse_cart) 트리거 ──────────────────────────────
+export type NurseCartPhase = "idle" | "arrived" | "tracking" | "done";
+
+/** 회진 시작 (staff) — 시나리오 B 전체(약품실→OCR→추종→홈 복귀·도킹). */
+export async function startRound(): Promise<{ ok: boolean }> {
+  const r = await fetch(`${API_BASE}/api/nurse_cart/start`, { method: "POST", credentials: "include" });
+  if (!r.ok) throw new Error(`/api/nurse_cart/start → ${r.status}`);
+  return r.json();
+}
+
+/** OCR 완료 (staff) — 로봇: 약품실 입구 이동 후 간호사 추종 시작. */
+export async function nurseCartOcrDone(): Promise<{ ok: boolean }> {
+  const r = await fetch(`${API_BASE}/api/nurse_cart/ocr_done`, { method: "POST", credentials: "include" });
+  if (!r.ok) throw new Error(`/api/nurse_cart/ocr_done → ${r.status}`);
+  return r.json();
+}
+
+/** 회진 종료 (staff) — 로봇: 추종 중지 후 홈 복귀·도킹. */
+export async function nurseCartRoundDone(): Promise<{ ok: boolean }> {
+  const r = await fetch(`${API_BASE}/api/nurse_cart/round_done`, { method: "POST", credentials: "include" });
+  if (!r.ok) throw new Error(`/api/nurse_cart/round_done → ${r.status}`);
+  return r.json();
+}
+
+/** 로봇 현재 단계 (공개) — idle | arrived | tracking | done. */
+export const getNurseCartPhase = () => getJSON<{ phase: NurseCartPhase }>("/api/nurse_cart/phase");
 
 export type Injection = {
   약품명?: string;
@@ -239,5 +309,17 @@ export async function verifyInjection(
     body: JSON.stringify({ ocr_text, prescription }),
   });
   if (!r.ok) throw new Error(`/api/patients/${pid}/injections/${inj_id}/verify → ${r.status}`);
+  return r.json();
+}
+
+export async function confirmInjection(
+  pid: string,
+  inj_id: string,
+): Promise<{ ok: boolean; status: string }> {
+  const r = await fetch(`${API_BASE}/api/patients/${pid}/injections/${inj_id}/confirm`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!r.ok) throw new Error(`/api/patients/${pid}/injections/${inj_id}/confirm → ${r.status}`);
   return r.json();
 }

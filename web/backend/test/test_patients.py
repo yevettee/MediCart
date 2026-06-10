@@ -2,6 +2,7 @@
 
 실행: cd MediCart/web/backend && python3 -m pytest test/test_patients.py -v
 """
+import patients
 from patients import patient_node_to_api
 
 
@@ -22,3 +23,13 @@ def test_patient_node_to_api_with_visits_and_no_intake():
     out = patient_node_to_api("P-2026-0002", node)
     assert out["visits"] == [{"방문일": "2026-01-01"}]
     assert out["intake"] is None
+
+
+def test_patient_node_exposes_intake_done_true():
+    out = patients.patient_node_to_api("P-2024-0001", {"info": {}, "intake_done": True})
+    assert out["intake_done"] is True
+
+
+def test_patient_node_intake_done_defaults_false():
+    out = patients.patient_node_to_api("P-2024-0001", {"info": {}})
+    assert out["intake_done"] is False

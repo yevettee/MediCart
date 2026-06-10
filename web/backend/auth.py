@@ -8,8 +8,11 @@ import hmac
 ROLE_RANK = {"patient": 0, "staff": 1, "admin": 2}
 
 _OPEN = {"/api/health", "/api/login", "/api/me", "/api/logout", "/api/intake",
-         "/api/nurse_cart/phase"}  # 약품실 도착 감지 — 로그인 없이 폴링 가능
-_STAFF_PREFIXES = ("/api/patients", "/api/ocr", "/api/nurse_cart/ocr_done", "/api/nurse_cart/round_done","/api/identify", "/api/display/expected")
+         "/api/nurse_cart/phase"}   # 약품실 공용 화면 — 로봇 단계 폴링(인증 불필요)
+# 키오스크 디스플레이 현재 환자(읽기/표시) — 비로그인 허용. (display/expected 는 staff)
+_PATIENT_PREFIXES = ("/api/display/current",)
+_STAFF_PREFIXES = ("/api/patients", "/api/ocr", "/api/patrol", "/api/nurse_cart",
+                   "/api/identify", "/api/display/expected")
 
 
 def _eq(a, b):
@@ -34,6 +37,8 @@ def role_for_password(password, staff_pw, admin_pw):
 
 def required_role_for_path(path):
     if path in _OPEN:
+        return "patient"
+    if path.startswith(_PATIENT_PREFIXES):
         return "patient"
     if path.startswith(_STAFF_PREFIXES):
         return "staff"
