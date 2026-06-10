@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { getPatients, Patient, addVisit, getMe, submitIntake } from "@/lib/api";
 import type { Role } from "@/lib/auth";
-import { today, IntakeFields } from "@/components/IntakeForm";
+import { today, IntakeFields, prefillFromVisit } from "@/components/IntakeForm";
 
 function IntakeInner() {
   const searchParams = useSearchParams();
@@ -66,9 +66,9 @@ function IntakeInner() {
   }, [qrPid, router]);
 
   const patient = useMemo(() => patients.find((p) => p.id === pid), [patients, pid]);
-  // 환자 선택 시 진료과를 그 환자의 주 진료과로 프리필(미입력 시)
+  // 기존 환자 선택 시 최근 외래방문 값으로 폼 프리필(기존 상태 수정 — 매번 새로 안 써도 됨).
   useEffect(() => {
-    if (patient) setForm((f) => ({ ...f, 진료과: f.진료과 || patient["주 진료과"] || "" }));
+    if (patient) setForm(prefillFromVisit(patient));
   }, [patient]);
 
   const set = (id: string, v: unknown) => { setForm((f) => ({ ...f, [id]: v })); setSaved(null); };

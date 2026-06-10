@@ -1,6 +1,6 @@
 "use client";
-import { useState } from "react";
-import { addVisit } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { addVisit, getPatient, type Patient } from "@/lib/api";
 
 type Base = { id: string; label: string; wide?: boolean };
 type Field = Base & (
@@ -64,6 +64,22 @@ export const SECTIONS: { n: string; title: string; fields: Field[] }[] = [
 export const INTAKE_SECTIONS = SECTIONS;
 
 export const today = () => new Date().toISOString().slice(0, 10);
+
+// 환자의 최근 외래방문(visits[0])에서 폼 초기값 구성 — 기존 상태를 수정하는 UX.
+// 방문일은 항상 오늘(새 방문 기록), 진료과는 prefillDept > 최근값 > 주 진료과 순. 등록번호는 제외.
+export function prefillFromVisit(patient?: Patient | null, prefillDept?: string): Record<string, unknown> {
+  const base: Record<string, unknown> = {};
+  const latest = patient?.visits?.[0];
+  if (latest) {
+    for (const [k, v] of Object.entries(latest)) {
+      if (k === "방문일" || k === "등록번호") continue;
+      base[k] = v;
+    }
+  }
+  base["방문일"] = today();
+  base["진료과"] = prefillDept || base["진료과"] || patient?.["주 진료과"] || "";
+  return base;
+}
 
 // 드롭다운 + "기타(직접 입력)" — 기타 선택 시 자유 입력칸으로 전환.
 function ChoiceField(
@@ -168,7 +184,20 @@ export default function IntakeForm({ pid, patientName, prefillDept, onSaved, onC
   const [form, setForm] = useState<Record<string, unknown>>({ 방문일: today(), 진료과: prefillDept || "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(false);
+  const [prefilled, setPrefilled] = useState(false);   // 기존 방문 값에서 불러왔는지
   const set = (id: string, v: unknown) => { setForm((f) => ({ ...f, [id]: v })); setErr(false); };
+
+  // 기존 환자면 최근 외래방문 값을 불러와 프리필(신규/방문이력 없으면 빈 폼).
+  useEffect(() => {
+    if (!pid) return;
+    let alive = true;
+    getPatient(pid).then((p) => {
+      if (!alive) return;
+      setForm(prefillFromVisit(p, prefillDept));
+      setPrefilled(!!p?.visits?.length);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [pid, prefillDept]);
 
   async function submit() {
     if (!pid || busy) return;
@@ -187,6 +216,7 @@ export default function IntakeForm({ pid, patientName, prefillDept, onSaved, onC
         <div>
           <div className="eyebrow">문진 · 외래방문</div>
           <h2 className="text-[20px] font-bold mt-0.5">{patientName ? `${patientName}님 문진표` : "외래 방문 문진"}</h2>
+          {prefilled && <div className="text-[11.5px] text-teal-600 mt-0.5">최근 방문 값을 불러왔습니다 — 수정 후 저장</div>}
         </div>
         <span className="text-[12.5px] text-ink-3 font-mono">{pid}</span>
       </div>
