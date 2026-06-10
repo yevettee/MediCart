@@ -2,8 +2,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getAmrs, getTargets, getMe, startRound, type AmrSnapshot, type GotoTarget } from "@/lib/api";
+import { isLive } from "@/lib/telemetry";
 import { roleAtLeast, type Role } from "@/lib/auth";
-import { PRIMARY_NS } from "@/lib/config";
+import { NURSE_CART_NS, PATROL_NS } from "@/lib/config";
 import RoundOverlay from "@/components/RoundOverlay";
 import RoundsIntakeOverlay, { type RoundStop } from "@/components/RoundsIntakeOverlay";
 
@@ -26,8 +27,6 @@ const BANNERS: Banner[] = [
     minRole: "staff", icon: <PatientGlyph /> },
   { href: "/intake", title: "문진표", sub: "초진 종합 문진 작성·저장", tone: "#16a34a", soft: "#e4f6ea",
     minRole: "patient", icon: <FormGlyph /> },
-  { href: "/debug", title: "디버그", sub: "PC1·PC2 Redis 종합 시각화", tone: "#b0814a", soft: "#f4ecdf",
-    minRole: "admin", icon: <DebugGlyph /> },
 ];
 
 export default function Home() {
@@ -48,8 +47,7 @@ export default function Home() {
     const load = () =>
       getAmrs().then((a: Record<string, AmrSnapshot>) => {
         const vals = Object.values(a);
-        const now = Date.now() / 1000;
-        const online = vals.filter((s) => s && s.stamp && now - s.stamp < 5).length;
+        const online = vals.filter((s) => isLive(s?.stamp, 5000)).length;
         setStat({ online, total: Math.max(vals.length, 2) });
       }).catch(() => {});
     load();
@@ -61,9 +59,11 @@ export default function Home() {
     getTargets().then((r) => setTargets(r.targets || {})).catch(() => {});
   }, []);
 
-  const dock = targets["dock"]
-    ? { x: targets.dock.x, y: targets.dock.y, yaw: targets.dock.yaw }
-    : { x: -8, y: -6, yaw: 0 };
+  // 순회 문진 복귀 홈 — RTDB targets.home(고정 도킹 위치 -0.89,-0.66).
+  // dock_after:true 로 도착 후 자동 도킹. patrol_intake_mission 의 home 으로 전달.
+  const dock = targets["home"]
+    ? { x: targets.home.x, y: targets.home.y, yaw: targets.home.yaw ?? 0, dock_after: true }
+    : { x: -0.89, y: -0.66, yaw: 0, dock_after: true };
 
   // 순회 문진 정차 리스트 — 타겟 좌표 + /rooms 키(배정환자).
   const roundStops: RoundStop[] = ROUND_MAP.flatMap((m) => {
@@ -71,14 +71,14 @@ export default function Home() {
     return t ? [{ key: m.targetKey, label: m.label, room: m.room, x: t.x, y: t.y, yaw: t.yaw }] : [];
   });
 
-  // 회진 시작(시나리오 B): nurse_cart_mission 발행 후 단계 인식 오버레이.
+  // 간호사 투약(시나리오 B, robot6 전담): nurse_cart_mission 발행 후 단계 인식 오버레이.
   async function startRoundFlow() {
     setRoundConfirm(false); setRoundMsg(null);
     try {
-      await startRound();
+      await startRound(NURSE_CART_NS);
       setRoundActive(true);
     } catch {
-      setRoundMsg("회진 시작 실패 — 권한(의료진)·연결 확인");
+      setRoundMsg("간호사 투약 시작 실패 — 권한(의료진)·연결 확인");
     }
   }
 
@@ -95,9 +95,9 @@ export default function Home() {
           style={{ background: "linear-gradient(90deg,#0ca39a,#0b7d76)" }}
         >
           <div>
-            <div className="text-[20px] font-bold">회진 시작</div>
+            <div className="text-[20px] font-bold">간호사 투약</div>
             <div className="text-[13px] text-white/80 mt-1">
-              {roundMsg ?? "약품실 이동 → 약품 OCR → 간호사 추종 → 홈 복귀·도킹 (시나리오 B)"}
+              {roundMsg ?? "robot6 · 약품실 이동 → 약품 OCR → 간호사 추종 → 홈 복귀·도킹 (시나리오 B)"}
             </div>
           </div>
           <span className="text-[26px]">▶</span>
@@ -107,14 +107,14 @@ export default function Home() {
           className="w-full rounded-2xl px-7 py-6 mb-6 text-white shadow-md flex items-center justify-between gap-4"
           style={{ background: "linear-gradient(90deg,#0ca39a,#0b7d76)" }}
         >
-          <div className="text-[15px] font-semibold">회진을 시작할까요? (로봇이 약품실로 이동 → OCR → 추종 → 복귀·도킹)</div>
+          <div className="text-[15px] font-semibold">간호사 투약을 시작할까요? (robot6 — 약품실 이동 → OCR → 추종 → 복귀·도킹)</div>
           <div className="flex gap-2 shrink-0">
             <button onClick={startRoundFlow} className="px-5 py-2.5 rounded-xl bg-white text-[#0b7d76] font-semibold">확인</button>
             <button onClick={() => setRoundConfirm(false)} className="px-5 py-2.5 rounded-xl bg-white/20 font-semibold">취소</button>
           </div>
         </div>
       ) : null}
-      <RoundOverlay active={roundActive} ns={PRIMARY_NS} onExit={() => setRoundActive(false)} />
+      <RoundOverlay active={roundActive} ns={NURSE_CART_NS} onExit={() => setRoundActive(false)} />
 
       {/* 순회 문진 (로봇 자율 순회 + QR 배정환자 검증 + 문진/부재중) — 회진과 별개 시나리오. staff+ */}
       {roleAtLeast(role, "staff") && (!roundsConfirm ? (
@@ -125,7 +125,7 @@ export default function Home() {
         >
           <div>
             <div className="text-[20px] font-bold">순회 문진 시작</div>
-            <div className="text-[13px] text-white/80 mt-1">101호 1·2번을 순회하며 환자 QR 인식 후 문진을 진행합니다</div>
+            <div className="text-[13px] text-white/80 mt-1">robot3 · 101호 1·2번, 102호 1번을 순회하며 환자 QR 인식 후 문진을 진행합니다</div>
           </div>
           <span className="text-[26px]">▶</span>
         </button>
@@ -134,7 +134,7 @@ export default function Home() {
           className="w-full rounded-2xl px-7 py-6 mb-6 text-white shadow-md flex items-center justify-between gap-4"
           style={{ background: "linear-gradient(90deg,#6d5ae0,#4b3bbd)" }}
         >
-          <div className="text-[15px] font-semibold">순회 문진을 시작할까요? (101호 1·2번 순회 후 복귀·도킹)</div>
+          <div className="text-[15px] font-semibold">순회 문진을 시작할까요? (101호 1·2번 → 102호 1번 순회 후 홈 복귀·도킹)</div>
           <div className="flex gap-2 shrink-0">
             <button onClick={() => { setRoundsConfirm(false); setRoundsActive(true); }}
               className="px-5 py-2.5 rounded-xl bg-white text-[#4b3bbd] font-semibold">확인</button>
@@ -145,7 +145,7 @@ export default function Home() {
       ))}
       <RoundsIntakeOverlay
         active={roundsActive}
-        ns={PRIMARY_NS}
+        ns={PATROL_NS}
         stops={roundStops}
         dock={dock}
         onExit={() => { setRoundsActive(false); setRoundsConfirm(false); }}
@@ -225,7 +225,4 @@ function PatientGlyph() {
 }
 function FormGlyph() {
   return (<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="3" width="14" height="18" rx="2.4" /><path d="M9 8h6M9 12h6M9 16h3" /></svg>);
-}
-function DebugGlyph() {
-  return (<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="9" width="16" height="10" rx="2" /><path d="M9 9V6a3 3 0 0 1 6 0v3M8 14h.01M12 14h.01M16 14h.01" /></svg>);
 }

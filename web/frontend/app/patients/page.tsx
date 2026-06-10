@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getPatients, Patient } from "@/lib/api";
+import { ageFrom } from "@/lib/patient";
 
 export default function PatientsPage() {
   const [list, setList] = useState<Patient[]>([]);
@@ -19,13 +20,14 @@ export default function PatientsPage() {
       <div className="grid grid-cols-2 gap-4 mt-6 rise">
         {list.map((p) => {
           const allergy = (p["약물 알레르기"] && p["약물 알레르기"] !== "없음") ? p["약물 알레르기"] : null;
+          const age = ageFrom(p.생년월일);
           return (
             <Link key={p.id} href={`/patients/${p.id}`} className="card card-hover p-5 block">
               <div className="flex items-start justify-between">
                 <div>
                   <div className="flex items-center gap-2.5">
                     <span className="text-[18px] font-bold">{p.성명}</span>
-                    <span className="text-[13px] text-ink-3">{p.성별} · {String(p.나이)}세 · {p.혈액형}</span>
+                    <span className="text-[13px] text-ink-3">{p.성별}{age != null && ` · ${age}세`} · {p.혈액형}</span>
                   </div>
                   <div className="mono text-[12px] text-ink-3 mt-1">{p.id}</div>
                 </div>

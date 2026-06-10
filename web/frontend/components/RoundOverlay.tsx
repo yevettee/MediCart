@@ -39,11 +39,11 @@ export default function RoundOverlay({ active, ns, onExit }: Props) {
     if (!active) return;
     setPhase("idle"); setEnding(false);
     let alive = true;
-    const tick = () => getNurseCartPhase().then((r) => { if (alive) setPhase(r.phase); }).catch(() => {});
+    const tick = () => getNurseCartPhase(ns).then((r) => { if (alive) setPhase(r.phase); }).catch(() => {});
     tick();
     const t = setInterval(tick, 2000);
     return () => { alive = false; clearInterval(t); };
-  }, [active]);
+  }, [active, ns]);
 
   // 복귀 완료 → 잠시 후 닫기
   useEffect(() => {
@@ -54,9 +54,9 @@ export default function RoundOverlay({ active, ns, onExit }: Props) {
 
   const endRound = useCallback(async () => {
     setEnding(true);
-    try { await nurseCartRoundDone(); } catch { /* 무시 — 로봇이 복귀 처리 */ }
+    try { await nurseCartRoundDone(ns); } catch { /* 무시 — 로봇이 복귀 처리 */ }
     finally { setEnding(false); }
-  }, []);
+  }, [ns]);
 
   if (!active) return null;
 

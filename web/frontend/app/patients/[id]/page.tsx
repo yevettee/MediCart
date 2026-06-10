@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { getPatient, updatePatient, Patient, Visit } from "@/lib/api";
+import { ageFrom } from "@/lib/patient";
 
 // RTDB 키(마이그레이션에서 / → _ 로 정제됨)와 정확히 일치시켜 읽는다.
 const K_FOOD = "음식_기타 알레르기";
@@ -203,13 +204,6 @@ export default function PatientDetail() {
 
 const clean = (s?: unknown) => { const t = s == null ? "" : String(s); return t && t !== "없음" && t.trim() ? t : null; };
 const val = (v: unknown) => (v == null || v === "" ? "—" : String(v));
-function ageFrom(birth?: string) {
-  if (!birth) return null;
-  const b = new Date(birth); if (isNaN(b.getTime())) return null;
-  const n = new Date(); let a = n.getFullYear() - b.getFullYear();
-  if (n.getMonth() < b.getMonth() || (n.getMonth() === b.getMonth() && n.getDate() < b.getDate())) a--;
-  return a >= 0 && a < 150 ? a : null;
-}
 function bmiFrom(h?: unknown, w?: unknown) {
   const H = Number(h), W = Number(w);
   if (!H || !W) return null;

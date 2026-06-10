@@ -148,6 +148,14 @@ def test_valid_robot_ns():
     assert not valid_robot_ns("amr2") and not valid_robot_ns("../x")
 
 
+def test_valid_robot_ns_rejects_traversal_and_unknown():
+    """TC-X-RTDB-08(보강): 경로 조작·빈문자·미등록 ns 거부."""
+    from fb_read import valid_robot_ns
+    assert valid_robot_ns("robot3") and valid_robot_ns("robot6")
+    for bad in ("../x", "", "robot9", "robot3/..", "ROBOT3"):
+        assert not valid_robot_ns(bad), bad
+
+
 def test_list_missions_filters_meta_and_sorts():
     from fb_read import list_missions
     pool = {
@@ -183,9 +191,12 @@ def test_mission_payload_goto_missing_coords_rejected():
 def test_targets_seed_shape():
     import fb_read
     seed = fb_read.targets_seed()
-    assert len(seed) == 5
+    assert len(seed) == 7
     assert seed["dock"]["dock_after"] is True
-    assert seed["dock"]["x"] == -8.0 and seed["dock"]["y"] == -6.0
+    assert seed["dock"]["x"] == -0.354229 and seed["dock"]["y"] == -0.118972
+    assert seed["t102_1"]["x"] == -4.3 and seed["t102_1"]["y"] == -3.39
+    assert seed["home"]["x"] == -0.89 and seed["home"]["y"] == -0.66
+    assert seed["home"]["dock_after"] is True
     for v in seed.values():
         assert "label" in v and "x" in v and "y" in v and "yaw" in v
 
@@ -238,3 +249,11 @@ def test_phase_or_idle():
     assert fb_read._phase_or_idle("") == "idle"
     assert fb_read._phase_or_idle(123) == "idle"
     assert fb_read._phase_or_idle("tracking") == "tracking"
+
+
+def test_reset_patrol_rejects_bad_ns():
+    """잘못된 ns 는 firebase 접근 전에 False 로 거부(순수부)."""
+    import fb_read
+    assert fb_read.reset_patrol("../x") is False
+    assert fb_read.reset_patrol("") is False
+    assert fb_read.reset_patrol("robot9") is False

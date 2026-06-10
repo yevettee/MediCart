@@ -2,8 +2,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getRooms, getPatient, pushMission, verifyIdentify, setIntakeStatus,
-  getPatrolPhase, sendPatrolAdvance,
+  getPatrolPhase, sendPatrolAdvance, startPatrol,
 } from "@/lib/api";
+import { acceptArrival } from "@/lib/patrol";
 import QrScanner from "@/components/QrScanner";
 import IntakeForm from "@/components/IntakeForm";
 
@@ -13,12 +14,12 @@ type Props = {
   active: boolean;
   ns: string;
   stops: RoundStop[];
-  dock: { x: number; y: number; yaw?: number };
+  dock: { x: number; y: number; yaw?: number; dock_after?: boolean };
   onExit: () => void;
 };
 
-type Phase = "starting" | "moving" | "scanning" | "intake" | "absent" | "returning" | "summary";
-type Outcome = { room: string; label: string; name: string; status: "done" | "absent" };
+type Phase = "starting" | "moving" | "scanning" | "intake" | "absent" | "noassign" | "returning" | "summary";
+type Outcome = { room: string; label: string; name: string; status: "done" | "absent" | "none" };
 
 const SCAN_SECONDS = 30;
 const ABSENT_SECONDS = 5;
@@ -32,12 +33,15 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
   const [warn, setWarn] = useState("");            // 불일치/미등록 인라인
   const [secs, setSecs] = useState(SCAN_SECONDS);
   const [results, setResults] = useState<Outcome[]>([]);
+  const [aborted, setAborted] = useState(false);   // 홈복귀로 순회 중단
 
   const stop = stops[idx];
   const phaseRef = useRef<Phase>(phase);           // 폴링 콜백에서 최신 phase 참조
   const lastArrivedRef = useRef<number>(-1);       // 처리한 도착 idx(중복 방지)
   const resetNonce = useRef(0);
   const advancingRef = useRef(false);
+  const readyRef = useRef(false);      // startPatrol 성공/idle 관측 후 도착 수용 허용
+  const arrivingRef = useRef(false);   // arriveAt async 동안 poll 재진입 차단(동기 잠금)
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
 
@@ -46,16 +50,22 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
   //   이제 시퀀서가 한 번에 받아 병상 사이 이동을 로봇 내부에서 처리한다.
   useEffect(() => {
     if (!active) return;
-    setPhase("starting"); setIdx(0); setResults([]); setWarn("");
+    setPhase("starting"); setIdx(0); setResults([]); setWarn(""); setAborted(false);
     lastArrivedRef.current = -1; advancingRef.current = false;
+    readyRef.current = false; arrivingRef.current = false;
     let cancelled = false;
     (async () => {
+      const stopsPayload = stops.map((s) => ({
+        x: s.x, y: s.y, yaw: s.yaw ?? 0, room: s.room, label: s.label,
+      }));
       try {
-        const stopsPayload = stops.map((s) => ({
-          x: s.x, y: s.y, yaw: s.yaw ?? 0, room: s.room, label: s.label,
-        }));
-        await pushMission(ns, "patrol_intake_mission", { stops: stopsPayload, home: dock });
-      } catch { /* 무시하고 진행 — 로봇 미연결 시 수동 버튼 폴백 */ }
+        const r = await startPatrol(ns, { stops: stopsPayload, home: dock });
+        if (r?.ok) readyRef.current = true;   // 백엔드 reset 완료 → 이 시점부터 fresh
+        else throw new Error(r?.error || "startPatrol 실패");
+      } catch {
+        // 폴백: 깨끗한 시작 없이 직접 push — ready 는 idle 관측으로만
+        await pushMission(ns, "patrol_intake_mission", { stops: stopsPayload, home: dock }).catch(() => {});
+      }
       if (!cancelled) setPhase("moving");
     })();
     return () => { cancelled = true; };
@@ -70,19 +80,26 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
 
   // ── 도착 처리: 배정환자 로드 후 스캔 시작 ─────────────────────────────
   const arriveAt = useCallback((i: number) => {
-    if (i < 0 || i >= stops.length) return;
+    if (i < 0 || i >= stops.length) { arrivingRef.current = false; return; }
+    arrivingRef.current = true;        // 진입 동기 잠금(poll/수동 경로 공통)
     lastArrivedRef.current = i;
     setIdx(i);
+    setWarn(""); setScanPid("");
     const room = stops[i].room;
     (async () => {
+      let apid = "", name = "";
       try {
-        const rooms = await getRooms();
-        const apid = (rooms[room] as { patient?: string } | undefined)?.patient ?? "";
-        const ap = apid ? await getPatient(apid).catch(() => null) : null;
-        setAssigned({ pid: apid, name: ap?.성명 ?? "" });
-      } catch { setAssigned({ pid: "", name: "" }); }
+        // /api/rooms 응답은 { rooms: {...} } 형태 — MapView 와 동일하게 .rooms 로 접근.
+        const resp = await getRooms();
+        const roomsMap = (resp?.rooms as Record<string, { patient?: string }> | undefined) ?? {};
+        apid = roomsMap[room]?.patient ?? "";
+        if (apid) { const ap = await getPatient(apid).catch(() => null); name = ap?.성명 ?? ""; }
+      } catch { apid = ""; name = ""; }
+      setAssigned({ pid: apid, name });
+      if (apid) beginScan();           // 배정환자 있음 → QR 스캔
+      else setPhase("noassign");       // 배정환자 없음 → 안내 후 자동 다음
+      arrivingRef.current = false;     // phase 안정 후 잠금 해제
     })();
-    beginScan();
   }, [stops, beginScan]);
 
   // ── 폴링: RTDB patrol/phase 로 도착·완료 감지 ─────────────────────────
@@ -90,17 +107,17 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
     if (!active) return;
     const poll = async () => {
       try {
-        const p = await getPatrolPhase();
+        const p = await getPatrolPhase(ns);
         if (phaseRef.current === "returning") {
           if (p.phase === "idle") setPhase("summary");
           return;
         }
-        if (
-          p.phase === "arrived" && typeof p.stop?.idx === "number" &&
-          p.stop.idx !== lastArrivedRef.current &&
-          (phaseRef.current === "moving" || phaseRef.current === "starting")
-        ) {
-          arriveAt(p.stop.idx);
+        if (!readyRef.current && p.phase === "idle") readyRef.current = true;   // 리셋 관측(백업)
+        if (acceptArrival({
+          polledPhase: p.phase, polledIdx: p.stop?.idx,
+          lastIdx: lastArrivedRef.current, ready: readyRef.current, arriving: arrivingRef.current,
+        })) {
+          arriveAt(p.stop!.idx!);      // arriveAt 진입에서 arrivingRef=true 로 잠금
         }
       } catch { /* 폴링 실패 무시 */ }
     };
@@ -144,8 +161,8 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
     } catch { setWarn("검증 실패 — 다시 시도"); }
   }, [phase, stop, assigned.name]);
 
-  function record(status: "done" | "absent", pid: string) {
-    if (pid) setIntakeStatus(pid, status).catch(() => {});
+  function record(status: "done" | "absent" | "none", pid: string) {
+    if (pid && status !== "none") setIntakeStatus(pid, status).catch(() => {});
     setResults((r) => [...r, { room: stop?.room ?? "", label: stop?.label ?? "", name: assigned.name, status }]);
   }
 
@@ -158,10 +175,18 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
   const finishStop = useCallback(() => {
     if (advancingRef.current) return;
     advancingRef.current = true;
-    sendPatrolAdvance().catch(() => {});
+    sendPatrolAdvance(ns).catch(() => {});
+    setAssigned({ pid: "", name: "" });   // 다음 이동 시 직전 환자명 잔상 제거
     if (lastArrivedRef.current + 1 >= stops.length) setPhase("returning");
     else setPhase("moving");          // 다음 도착 신호 대기
-  }, [stops.length]);
+  }, [stops.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 배정환자 없음: 잠시 안내 후 자동으로 다음 병상(또는 복귀) ──────────
+  useEffect(() => {
+    if (phase !== "noassign") return;
+    const t = setTimeout(() => { record("none", ""); finishStop(); }, 2500);
+    return () => clearTimeout(t);
+  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 로봇 미연결 폴백: 수동으로 다음 병상 도착 처리 ───────────────────
   const manualArrive = useCallback(() => {
@@ -169,18 +194,39 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
     if (next < stops.length) arriveAt(next);
   }, [arriveAt, stops.length]);
 
+  // ── 홈 복귀·도킹: 남은 순회 취소 → 홈 좌표로 goto(dock_after) → 오버레이 종료 ──
+  const goHomeAndDock = useCallback(() => {
+    if (aborted) return;
+    if (!window.confirm("남은 순회를 취소하고 홈으로 복귀·도킹할까요?")) return;
+    advancingRef.current = true;          // 진행 차단
+    resetNonce.current += 1;              // 카운트다운 무효화
+    setAborted(true);
+    pushMission(ns, "goto", {
+      x: dock.x, y: dock.y, yaw: dock.yaw ?? 0, dock_after: true, label: "홈 복귀",
+    }).catch(() => {});
+    setPhase("summary");
+  }, [aborted, ns, dock]);
+
   if (!active) return null;
 
   const doneN = results.filter((r) => r.status === "done").length;
   const absentN = results.filter((r) => r.status === "absent").length;
+  const noneN = results.filter((r) => r.status === "none").length;
 
   return (
     <div className="fixed inset-0 z-50 bg-[#0b1f1d] text-white grid place-items-center overflow-auto py-8">
+      {/* 전체화면 안내 중 항상 노출되는 홈 복귀·도킹 버튼(우측 하단) */}
+      {phase !== "summary" && phase !== "intake" && (
+        <button onClick={goHomeAndDock} disabled={aborted}
+          className="fixed bottom-6 right-6 z-[60] px-5 py-3 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold text-[14px] backdrop-blur shadow-lg disabled:opacity-50">
+          ⏏ 홈 복귀·도킹
+        </button>
+      )}
       {/* ── 시작/이동/복귀 메시지 ── */}
       {(phase === "starting" || phase === "moving" || phase === "returning") && (
         <Center sub={`${ns.toUpperCase()} · 순회 문진`}>
           {phase === "starting" && "순회 문진을 가동합니다"}
-          {phase === "moving" && (assigned.name ? `${assigned.name}님께 이동 중` : `${stop?.label ?? ""} 이동 중`)}
+          {phase === "moving" && (lastArrivedRef.current < 0 ? "첫 병상으로 이동 중" : "다음 병상으로 이동 중")}
           {phase === "returning" && "순회 완료 — 복귀·도킹 중"}
           {phase === "moving" && (
             <button onClick={manualArrive}
@@ -220,20 +266,29 @@ export default function RoundsIntakeOverlay({ active, ns, stops, dock, onExit }:
         </Center>
       )}
 
+      {/* ── 배정환자 없음 → 자동 다음 ── */}
+      {phase === "noassign" && (
+        <Center sub={`${stop?.label ?? ""}`}>
+          배정 환자가 없습니다<br />
+          <span className="text-[0.5em] text-white/60">다음 병상으로 이동합니다</span>
+        </Center>
+      )}
+
       {/* ── 요약 ── */}
       {phase === "summary" && (
         <div className="w-full max-w-[520px] px-6 text-center">
-          <div className="text-[clamp(28px,6vw,52px)] font-bold">순회 문진 완료</div>
+          <div className="text-[clamp(28px,6vw,52px)] font-bold">{aborted ? "순회 중단 · 홈 복귀·도킹" : "순회 문진 완료"}</div>
           <div className="flex justify-center gap-8 mt-6 text-[20px]">
             <span className="text-green-300 font-bold">문진 완료 {doneN}</span>
             <span className="text-amber-300 font-bold">부재중 {absentN}</span>
+            {noneN > 0 && <span className="text-white/50 font-bold">미배정 {noneN}</span>}
           </div>
           <div className="mt-6 flex flex-col gap-2 text-left">
             {results.map((r, i) => (
               <div key={i} className="flex items-center justify-between rounded-xl bg-white/10 px-4 py-2.5">
                 <span>{r.label} · {r.name || "-"}</span>
-                <span className={r.status === "done" ? "text-green-300 font-semibold" : "text-amber-300 font-semibold"}>
-                  {r.status === "done" ? "문진 완료" : "부재중"}
+                <span className={r.status === "done" ? "text-green-300 font-semibold" : r.status === "absent" ? "text-amber-300 font-semibold" : "text-white/50 font-semibold"}>
+                  {r.status === "done" ? "문진 완료" : r.status === "absent" ? "부재중" : "배정 환자 없음"}
                 </span>
               </div>
             ))}

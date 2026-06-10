@@ -18,3 +18,17 @@ export function decideAfterScan(
 export function nextStop(idx: number, total: number): number | "return" {
   return idx + 1 < total ? idx + 1 : "return";
 }
+
+// 도착(arrived) 신호를 수용할지 판정 — 엄격순서(다음 순번만) + ready(리셋 관측) + async잠금.
+export function acceptArrival(opts: {
+  polledPhase: string;
+  polledIdx: number | undefined;
+  lastIdx: number;
+  ready: boolean;
+  arriving: boolean;
+}): boolean {
+  const { polledPhase, polledIdx, lastIdx, ready, arriving } = opts;
+  if (!ready || arriving) return false;
+  if (polledPhase !== "arrived" || typeof polledIdx !== "number") return false;
+  return polledIdx === lastIdx + 1;
+}

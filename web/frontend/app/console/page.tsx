@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE, getAmrs, AmrSnapshot, getMissions, Mission, getTargets, GotoTarget, pushMission, saveMode } from "@/lib/api";
+import { snapAgeMs, isLive } from "@/lib/telemetry";
 import { PRIMARY_NS, SECONDARY_NS } from "@/lib/config";
 import MapView from "@/components/MapView";
 import UPlotChart from "@/components/UPlotChart";
@@ -251,9 +252,8 @@ function MapToolbar({ amrs }: { amrs: Record<string, AmrSnapshot> }) {
 
 function AmrPanel({ src, snap, buf }: { src: string; snap?: AmrSnapshot; buf: Buf }) {
   const col = COLOR[src] || "#0ca39a";
-  const now = Date.now() / 1000;
-  const age = snap?.stamp ? now - snap.stamp : Infinity;
-  const online = age < 3;
+  const ageMs = snapAgeMs(snap?.stamp);
+  const online = isLive(snap?.stamp);
   const recent = buf.msgTimes.filter((m) => Date.now() - m < 2000).length;
   const hz = (recent / 2).toFixed(1);
   const xs = buf.t.length ? buf.t : [0];
@@ -274,7 +274,7 @@ function AmrPanel({ src, snap, buf }: { src: string; snap?: AmrSnapshot; buf: Bu
       </div>
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-4">
         <H label="수신Hz" v={online ? hz : "0.0"} />
-        <H label="경과" v={isFinite(age) ? `${(age * 1000).toFixed(0)}ms` : "—"} warn={age >= 3} />
+        <H label="경과" v={isFinite(ageMs) ? `${ageMs.toFixed(0)}ms` : "—"} warn={ageMs >= 3000} />
         <H label="모드" v={snap?.mode ?? "—"} />
         <H label="배터리" v={snap?.battery?.pct != null ? `${Math.round(snap.battery.pct > 1 ? snap.battery.pct : snap.battery.pct * 100)}%` : "—"} />
         <H label="도킹" v={snap?.dock?.is_docked ? "Y" : "N"} />

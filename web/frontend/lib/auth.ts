@@ -10,13 +10,14 @@ export function roleAtLeast(role: Role, min: Role): boolean {
 // 라우트별 최소 등급 (백엔드 required_role_for_path 와 일치)
 export function requiredRoleForRoute(path: string): Role {
   if (path === "/intake" || path.startsWith("/intake/")) return "patient";
+  if (path === "/") return "staff"; // 홈(간호사 투약·순회 문진) — 의료진부터
   if (path.startsWith("/patients") || path.startsWith("/ocr")) return "staff";
-  return "admin"; // "/", "/console", 그 외 보호 라우트
+  return "admin"; // "/console", 그 외 보호 라우트
 }
 
 // 사이드바 메뉴 노출용(각 href 의 최소 등급)
 export const NAV_ROLES: Record<string, Role> = {
-  "/": "admin",
+  "/": "staff",
   "/console": "admin",
   "/control": "admin",
   "/map": "admin",

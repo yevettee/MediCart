@@ -462,6 +462,15 @@ def set_patrol_advance(ns: str = PRIMARY_NS):
     _init().reference(f"{ns}/patrol/intake_done").set(True)
 
 
+def reset_patrol(ns: str = PRIMARY_NS) -> bool:
+    """순회 시작 전 stale 제거 — {ns}/patrol 을 idle/미완료로 set(이전 stop 키까지 제거).
+    잘못된 ns 는 firebase 접근 전 False."""
+    if not valid_robot_ns(ns):
+        return False
+    _init().reference(f"{ns}/patrol").set({"phase": "idle", "intake_done": False})
+    return True
+
+
 def intake_pending_payload(data, ts):
     """비로그인 환자 자기제출 문진 → intake_pending 레코드(순수)."""
     data = data or {}
@@ -540,9 +549,12 @@ def targets_seed():
         "t101_1": {"label": "101호 1번", "x": -4.39228, "y": -0.701007, "yaw": 2.47368},
         "t101_2": {"label": "101호 2번", "x": -4.21788, "y": -1.58667, "yaw": -2.63024},
         "t102":   {"label": "102호 호출", "x": -3.94329, "y": -3.34683, "yaw": -3.1113},
+        "t102_1": {"label": "102호 1번", "x": -4.3, "y": -3.39, "yaw": 0},
         "pharmacy": {"label": "약품실", "x": -0.302782, "y": -3.3757, "yaw": -0.0545105},
-        "dock":   {"label": "Docking Station", "x": -0.350975, "y": -1.10605,
-                   "yaw": 0.00228335, "dock_after": True},
+        "dock":   {"label": "Docking Station", "x": -0.354229, "y": -0.118972,
+                   "yaw": -0.0042011, "dock_after": True},
+        # 순회 문진 복귀 홈(robot3) — 도킹 위치. patrol_intake_mission home 으로 사용.
+        "home":   {"label": "홈", "x": -0.89, "y": -0.66, "yaw": 0, "dock_after": True},
     }
 
 
