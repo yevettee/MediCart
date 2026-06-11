@@ -1,6 +1,0 @@
----
-bool success
-string raw_text
-string cleaned_text
-float32 confidence
-string message
