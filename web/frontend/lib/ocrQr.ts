@@ -1,5 +1,6 @@
 // 처치실 QR 환자 확인 — 순수 3단계 판정(의존성 0, vitest). 표시명은 호출측에서 부여.
 export type QrDecision =
+  | { kind: "no_target" }
   | { kind: "blocked_patient"; scannedPid: string }
   | { kind: "blocked_meds"; unready: { name: string; status: string }[] }
   | { kind: "complete"; injCount: number };
@@ -15,6 +16,7 @@ export function decideQr(
   selectedPid: string,
   injections: InjLike[],
 ): QrDecision {
+  if (!selectedPid) return { kind: "no_target" };
   if (scannedPid !== selectedPid) return { kind: "blocked_patient", scannedPid };
   const unready = injections
     .filter((i) => i.status !== "confirmed")

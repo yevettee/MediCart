@@ -4,6 +4,10 @@ import { decideQr } from "./ocrQr";
 const inj = (id: string, status?: string, 약품명?: string) => ({ id, status, 약품명 });
 
 describe("decideQr", () => {
+  it("target(잠금 환자)이 비면 no_target", () => {
+    expect(decideQr("P-2024-0001", "", [])).toEqual({ kind: "no_target" });
+  });
+
   it("스캔 PID가 선택 환자와 다르면 blocked_patient", () => {
     const d = decideQr("P-2024-0002", "P-2024-0001", [inj("a", "confirmed")]);
     expect(d).toEqual({ kind: "blocked_patient", scannedPid: "P-2024-0002" });
