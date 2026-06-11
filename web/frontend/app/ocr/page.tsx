@@ -288,10 +288,15 @@ export default function OcrPage() {
     return () => { alive = false; clearInterval(t); };
   }, []);
 
-  /* 병상 도착(wait_qr/bed_arrived) → 자동 QR 모드, idle 복귀 → 잠금 해제 */
+  /* 병상 도착(wait_qr/bed_arrived) → 자동 QR 모드, idle 복귀 → 잠금 해제 + QR 상태 초기화 */
   useEffect(() => {
     if (phase === "wait_qr" || phase === "bed_arrived") setOcrMode("qr");
-    if (phase === "idle") setLockedPid("");
+    if (phase === "idle") {
+      setLockedPid("");
+      setOcrMode("single");   // 다음 런 위해 단일 스캔으로 복귀 — idle 중 no_target 카드 잔류 방지
+      setQrResult(null);
+      setQrRaw(null);
+    }
   }, [phase]);
 
   /* OCR 완료 → 로봇: 약품실 입구 이동 후 간호사 추종 시작 */
