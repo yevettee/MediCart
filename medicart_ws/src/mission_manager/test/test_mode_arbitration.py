@@ -11,6 +11,7 @@ def test_arbitrate_empty_is_idle():
 
 def test_arbitrate_picks_highest_priority():
     assert arbitrate({"patrol", "round"}) == "round"
+    assert arbitrate({"patrol", "round_nav"}) == "round_nav"
     assert arbitrate({"patrol", "guide", "intake"}) == "intake"
     assert arbitrate({"patrol"}) == "patrol"
 
@@ -23,6 +24,7 @@ def test_arbitrate_unknown_excluded():
 def test_priority_order_spec():
     p = MODE_PRIORITY
     assert p["mapping"] > p["intake"] > p["round"] > p["errand"] > p["guide"] > p["patrol"] > p["idle"]
+    assert p["round_nav"] == p["round"]
 
 
 def test_safety_gate_blocks_forward_on_lidar():

@@ -28,6 +28,7 @@ IDLE, GOTO_PHARMACY, WAIT_OCR, GOTO_STANDBY, START_ROUND, WAIT_ROUND_DONE, GOTO_
     'start_round', 'wait_round_done', 'goto_home', 'done', 'failed')
 
 NURSE_CART_ACTION = 'nurse_cart_mission'
+TRACK_MODE = 'round'
 
 # 약품실 기본 좌표 — ninety-frame (fb_read.py targets_seed 의 pharmacy 와 동일)
 _DEFAULT_PHARMACY = {'x': -0.302782, 'y': -3.3757, 'yaw': -0.0545105}
@@ -65,6 +66,9 @@ class NurseCartSequencer:
         self._nav_result = None   # (status, detail) | None — nav 콜백→tick 전달용
         self._ocr_done = False    # signal_ocr_done() 호출 시 True
         self._round_done = False  # signal_round_done() 호출 시 True
+        self._bed_arrived = False
+        self._bed_info = None
+        self._tracking_stopped = False
         self._standby_params = None
         self._home_params = None
 
@@ -72,6 +76,10 @@ class NurseCartSequencer:
     def active(self):
         """시퀀스 진행 중 여부."""
         return self._state not in (IDLE, DONE, FAILED)
+
+    def awaiting_bed_arrival(self):
+        """간호사 추종 중이며 병상 zone 도착 이벤트를 받을 수 있는지."""
+        return self._state == WAIT_ROUND_DONE and not self._tracking_stopped
 
     def start(self, mission_id, params=None):
         """nurse_cart_mission 시퀀스 시작."""
@@ -102,6 +110,9 @@ class NurseCartSequencer:
         with self._lock:
             self._ocr_done = False
             self._round_done = False
+            self._bed_arrived = False
+            self._bed_info = None
+            self._tracking_stopped = False
         self._emit('accepted', '간호사 카트: 약품실 이동 시작')
         self._log.info(
             f'[nurse_cart] ▶ START id={mission_id} → goto_pharmacy '
@@ -124,6 +135,17 @@ class NurseCartSequencer:
         with self._lock:
             self._round_done = True
         self._log.info('[nurse_cart] 회진 완료 신호 수신 → 홈 복귀 준비')
+
+    def signal_bed_arrived(self, info=None):
+        """병상 앞 zone 진입 신호 — 추종을 자동 해제하고 QR/완료 대기로 전환."""
+        if not self.awaiting_bed_arrival():
+            return False
+        with self._lock:
+            self._bed_arrived = True
+            self._bed_info = dict(info or {})
+        zone = (info or {}).get('zone_id', 'unknown')
+        self._log.info(f'[nurse_cart] 병상 zone 도착 신호 수신 zone={zone}')
+        return True
 
     def tick(self, now):  # noqa: ARG002
         """제어주기 1회 — 결과/플래그를 확인해 다음 단계로 전이."""
@@ -154,6 +176,11 @@ class NurseCartSequencer:
                 self._fail(f'약품실 입구 이동 실패: {detail}')
 
         elif self._state == WAIT_ROUND_DONE:
+            with self._lock:
+                bed_arrived, bed_info = self._bed_arrived, self._bed_info
+                self._bed_arrived = False
+            if bed_arrived:
+                self._handle_bed_arrived(bed_info)
             with self._lock:
                 done, self._round_done = self._round_done, False
             if done:
@@ -210,25 +237,42 @@ class NurseCartSequencer:
         self._nav.start(p, _on_done)
 
     def _enter_start_round(self):
-        """약품실 입구 도착 → round(간호사 추종) 모드 활성화 → 회진 완료 대기."""
+        """약품실 입구 도착 → cmd_vel 기반 간호사 추종 모드 활성화 → 회진 완료 대기."""
         self._state = START_ROUND
-        self._emit('running', '간호사 추종 모드 시작')
-        self._log.info(f'[nurse_cart] → START_ROUND id={self._id}')
-        ok, detail = self._arbiter.apply('start', 'round', {})
+        self._emit('running', '간호사 cmd_vel 추종 모드 시작')
+        self._log.info(f'[nurse_cart] → START_ROUND_CMD_VEL id={self._id}')
+        ok, detail = self._arbiter.apply('start', TRACK_MODE, {})
         if ok:
             self._state = WAIT_ROUND_DONE
-            self._emit('running', '추종 중 — 회진 완료 신호 대기')
+            self._emit('running', 'tracking_started')
             self._log.info(f'[nurse_cart] → WAIT_ROUND_DONE id={self._id}')
         else:
             self._fail(f'추종 모드 활성화 실패: {detail}')
+
+    def _handle_bed_arrived(self, info):
+        """병상 앞 zone 진입 → round 추종 해제, 완료/복귀 버튼 대기."""
+        if self._tracking_stopped:
+            return
+        self._tracking_stopped = True
+        self._arbiter.apply('stop', TRACK_MODE)
+        self._arbiter.apply('stop', 'round')
+        zone = str((info or {}).get('zone_id') or 'unknown')
+        room = str((info or {}).get('room_id') or '')
+        bed = str((info or {}).get('bed_id') or '')
+        detail = f'bed_arrived:{zone}:{room}:{bed}'
+        self._emit('running', detail)
+        self._log.info(
+            f'[nurse_cart] → BED_ARRIVED id={self._id} zone={zone} '
+            f'room={room} bed={bed} — 추종 해제, QR/완료 대기')
 
     def _enter_goto_home(self):
         """회진 완료 → round 모드 해제 + 홈(도킹 스테이션) 복귀 + 자동 dock."""
         p = self._home_params
         self._state = GOTO_HOME
         self._set_result(None)
-        self._arbiter.apply('stop', 'round')          # 추종 모드 해제
-        self._emit('running', '홈 복귀 중 (도킹 포함)')
+        self._arbiter.apply('stop', TRACK_MODE)       # 추종 모드 해제
+        self._arbiter.apply('stop', 'round')          # direct cmd_vel 추종도 방어적으로 해제
+        self._emit('running', 'returning_home')
         self._log.info(
             f'[nurse_cart] → GOTO_HOME id={self._id} '
             f'({p["x"]:.3f}, {p["y"]:.3f}) dock_after=True')

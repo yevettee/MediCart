@@ -47,11 +47,13 @@ class PersonTracker:
 
     def __init__(self, node, ns, model_path="ward_model.pt", target_classes=("nurse",),
                  conf=0.5, sync_slop=0.05, near_percentile=0.30,
-                 infer_hz=10.0, rgb_topic=None, depth_topic=None):
+                 infer_hz=10.0, rgb_topic=None, depth_topic=None,
+                 base_frame="base_link"):
         self._node = node
         self._ns = ns
         self._log = node.get_logger()
         self._target_classes = set(target_classes)
+        self._base_frame = str(base_frame or "base_link")
         self._near_pct = float(near_percentile)
         self._yolo = YoloHelper(model_path, conf=conf, logger=self._log)
 
@@ -121,10 +123,9 @@ class PersonTracker:
             pt.header.frame_id = self._camera_frame
             pt.header.stamp    = rclpy.time.Time().to_msg()  # 최신 TF 사용
             pt.point.x, pt.point.y, pt.point.z = float(x_cam), float(y_cam), float(z_cam)
-            base_frame = f"{self._ns}/base_link"
             try:
                 pt_base = self._tf_buffer.transform(
-                    pt, base_frame,
+                    pt, self._base_frame,
                     timeout=rclpy.duration.Duration(seconds=0.05))
                 return pt_base.point.x, pt_base.point.y
             except Exception:

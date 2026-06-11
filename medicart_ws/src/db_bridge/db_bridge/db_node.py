@@ -219,13 +219,9 @@ class DbNode(Node):
                                  'updated_ts': _now_ms()})
             except Exception as exc:                   # noqa: BLE001
                 self.get_logger().warn(f'[db_node] progress 기록 실패 id={mid}: {exc}')
-            # 간호사 카트 약품실 도착 신호 → RTDB /{ns}/nurse_cart/phase=arrived
-            if cur.get('action') == 'nurse_cart_mission' and detail == 'pharmacy_arrived':
-                try:
-                    self._fb.write(f'{self.ns}/nurse_cart/phase', 'arrived')
-                    self.get_logger().info('[db_node] nurse_cart phase=arrived → RTDB 기록')
-                except Exception as exc:               # noqa: BLE001
-                    self.get_logger().warn(f'[db_node] nurse_cart phase 기록 실패: {exc}')
+            # 간호사 카트 단계 신호 → RTDB /{ns}/nurse_cart/* 기록
+            if cur.get('action') == 'nurse_cart_mission':
+                self._write_nurse_cart_progress(detail)
             # 순회 문진 병상 도착 신호('stop_arrived:{idx}:{room}') → RTDB patrol/phase=arrived
             if (cur.get('action') == 'patrol_intake_mission'
                     and str(detail).startswith('stop_arrived:')):
@@ -250,6 +246,38 @@ class DbNode(Node):
                 f'[db_node] patrol phase=arrived idx={idx} room={room} → RTDB 기록')
         except Exception as exc:                       # noqa: BLE001
             self.get_logger().warn(f'[db_node] patrol phase 기록 실패: {exc}')
+
+    def _write_nurse_cart_progress(self, detail):
+        """nurse_cart feedback detail → RTDB phase/bed info 기록."""
+        detail = str(detail)
+        try:
+            if detail == 'pharmacy_arrived':
+                self._fb.write(f'{self.ns}/nurse_cart/phase', 'arrived')
+                self.get_logger().info('[db_node] nurse_cart phase=arrived → RTDB 기록')
+            elif detail == 'tracking_started':
+                self._fb.write(f'{self.ns}/nurse_cart/phase', 'tracking')
+                self.get_logger().info('[db_node] nurse_cart phase=tracking → RTDB 기록')
+            elif detail.startswith('bed_arrived:'):
+                self._write_nurse_cart_bed_arrived(detail)
+            elif detail == 'returning_home':
+                self._fb.write(f'{self.ns}/nurse_cart/phase', 'returning')
+                self.get_logger().info('[db_node] nurse_cart phase=returning → RTDB 기록')
+        except Exception as exc:                       # noqa: BLE001
+            self.get_logger().warn(f'[db_node] nurse_cart progress 기록 실패: {exc}')
+
+    def _write_nurse_cart_bed_arrived(self, detail):
+        """'bed_arrived:{zone}:{room}:{bed}' → nurse_cart phase/stop + medication phase."""
+        parts = str(detail).split(':')
+        zone = parts[1] if len(parts) > 1 else ''
+        room = parts[2] if len(parts) > 2 else ''
+        bed = parts[3] if len(parts) > 3 else ''
+        payload = {'zone_id': zone, 'room': room, 'bed': bed, 'ts': _now_ms()}
+        self._fb.write(f'{self.ns}/nurse_cart/phase', 'bed_arrived')
+        self._fb.write(f'{self.ns}/nurse_cart/bed_arrival', payload)
+        self._fb.write(f'{self.ns}/medication/phase', 'wait_qr')
+        self._fb.write(f'{self.ns}/medication/bed_arrival', payload)
+        self.get_logger().info(
+            f'[db_node] nurse_cart phase=bed_arrived room={room} bed={bed} → RTDB 기록')
 
     def _finish(self, mid, status, detail):
         """terminal — mission_log 아카이브 후 mission_pool 에서 비우고 다음 진행."""

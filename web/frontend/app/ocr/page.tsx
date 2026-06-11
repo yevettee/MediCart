@@ -297,8 +297,8 @@ export default function OcrPage() {
   async function handleRoundDone() {
     setRoundSending(true); setDoneMsg("");
     try {
-      await nurseCartRoundDone(NURSE_CART_NS);
-      setDoneMsg("회진 종료 전송됨 — 로봇이 홈으로 복귀해 도킹합니다.");
+      await nurseCartRoundDone();
+      setDoneMsg("완료/복귀 전송됨 — 로봇이 홈으로 복귀해 도킹합니다.");
     } catch (e) {
       setDoneMsg("전송 실패: " + String(e));
     } finally {
@@ -308,6 +308,8 @@ export default function OcrPage() {
 
   const selectedInj = injections.find((i) => i.id === injId);
   const selectedPat = patients.find((p) => p.id === pid);
+  const returnButtonLabel =
+    phase === "bed_arrived" || phase === "wait_qr" ? "완료/복귀" : "회진 종료";
 
   return (
     <div className="p-6 max-w-5xl">
@@ -332,7 +334,7 @@ export default function OcrPage() {
             </button>
             <button onClick={handleRoundDone} disabled={roundSending}
               className="rounded-xl bg-ink text-white px-4 py-2 text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-colors flex items-center gap-2">
-              {roundSending ? <Spinner /> : null} 회진 종료
+              {roundSending ? <Spinner /> : null} {returnButtonLabel}
             </button>
           </div>
         </div>
@@ -645,6 +647,9 @@ function PhaseBadge({ phase }: { phase: NurseCartPhase }) {
     idle:     { label: "대기",        cls: "bg-surface-2 text-ink-3" },
     arrived:  { label: "약품실 도착",  cls: "bg-amber-soft text-amber" },
     tracking: { label: "간호사 추종 중", cls: "bg-teal-soft text-teal" },
+    bed_arrived: { label: "병상 도착 · QR 대기", cls: "bg-amber-soft text-amber" },
+    wait_qr:  { label: "QR 대기",      cls: "bg-amber-soft text-amber" },
+    returning:{ label: "복귀 중",      cls: "bg-teal-soft text-teal" },
     done:     { label: "복귀 완료",     cls: "bg-green-soft text-green" },
   };
   const m = map[phase] ?? map.idle;

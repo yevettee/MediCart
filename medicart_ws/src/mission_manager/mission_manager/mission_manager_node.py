@@ -13,13 +13,16 @@ import time
 
 import rclpy
 from rclpy.node import Node
+from geometry_msgs.msg import PoseWithCovarianceStamped
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 
+from .bed_zone_monitor import BedZoneMonitor
 from .mission_executor import MissionExecutor
 from .mission_sequencer import MissionSequencer, SEQUENCE_ACTION
 from .mode_arbiter import ModeArbiter
+from .mode_arbitration import SafetyParams
 from .nav_executor import NavExecutor
 from .nurse_cart_sequencer import NurseCartSequencer, NURSE_CART_ACTION
 from .patrol_intake_sequencer import PatrolIntakeSequencer, PATROL_INTAKE_ACTION
@@ -30,6 +33,7 @@ from .system_commands import SYSTEM_ACTIONS
 MODE_REGISTRY = {
     "goto": "nav",         # 운영자 좌표 이동(허브 내부 NavExecutor)
     "round": "reactive",   # 회진/추종 (nurse_tracker)
+    "round_nav": "nav",    # 회진/추종 (nurse_tracker target → Nav2 goal 갱신)
     "patrol": "nav", "errand": "nav", "guide": "nav", "intake": "nav",
 }
 MODE_ACTIONS = ("start", "stop", "clear")
@@ -63,9 +67,15 @@ class MissionManagerNode(Node):
         # ── 모드 중재 허브 ───────────────────────────────────────────────
         self.declare_parameter('control_hz', 10.0)
         self.declare_parameter('front_cone_deg', 30.0)
+        self.declare_parameter('lidar_stop', 0.30)
+        self.declare_parameter('depth_stop', 0.20)
         self._front_cone = math.radians(float(self.get_parameter('front_cone_deg').value))
+        safety = SafetyParams(
+            lidar_stop=float(self.get_parameter('lidar_stop').value),
+            depth_stop=float(self.get_parameter('depth_stop').value))
         self._forward_clearance = None
-        self._arbiter = ModeArbiter(self, ns, MODE_REGISTRY, self.get_logger())
+        self._arbiter = ModeArbiter(
+            self, ns, MODE_REGISTRY, self.get_logger(), safety=safety)
         # 시나리오 A 시퀀서 — patrol_mission(undock→patrol→dock) 오케스트레이션.
         self._sequencer = MissionSequencer(
             self._executor, self._arbiter, self._publish_feedback, self.get_logger())
@@ -73,6 +83,7 @@ class MissionManagerNode(Node):
         # 간호사 카트 시퀀서 — nurse_cart_mission(goto_pharmacy→...) 오케스트레이션.
         self._nurse_cart = NurseCartSequencer(
             self._nav, self._arbiter, self._publish_feedback, self.get_logger())
+        self._bed_zone_monitor = BedZoneMonitor()
         # 시나리오 A 순회 문진 시퀀서 — patrol_intake_mission(병상별 goto→intake 대기 루프).
         self._patrol_intake = PatrolIntakeSequencer(
             self._nav, self._arbiter, self._publish_feedback, self.get_logger())
@@ -87,6 +98,8 @@ class MissionManagerNode(Node):
         self._cmd_pub = self.create_publisher(Twist, f'/{ns}/cmd_vel', 10)
         self._robot_mode_pub = self.create_publisher(String, f'/{ns}/robot_mode', 10)
         self.create_subscription(LaserScan, f'/{ns}/scan', self._on_scan, 10)
+        self.create_subscription(
+            PoseWithCovarianceStamped, f'/{ns}/amcl_pose', self._on_amcl_pose, 10)
         hz = float(self.get_parameter('control_hz').value)
         self.create_timer(1.0 / hz, self._control_tick)
 
@@ -134,6 +147,22 @@ class MissionManagerNode(Node):
     def _on_patrol_intake_done(self, _msg):
         """db_node 경유 문진 완료 신호 → patrol_intake 시퀀서 WAIT_INTAKE 해제 → 다음 병상."""
         self._patrol_intake.signal_intake_done()
+
+    def _on_amcl_pose(self, msg):
+        """추종 중 병상 앞 zone 진입 감지 → nurse_cart 추종 자동 해제."""
+        if not self._nurse_cart.active():
+            self._bed_zone_monitor.reset()
+            return
+        if not self._nurse_cart.awaiting_bed_arrival():
+            return
+        x = msg.pose.pose.position.x
+        y = msg.pose.pose.position.y
+        payload = self._bed_zone_monitor.update(x, y)
+        if payload and self._nurse_cart.signal_bed_arrived(payload):
+            self.get_logger().info(
+                '[mission_manager] bed zone arrived '
+                f"zone={payload.get('zone_id')} room={payload.get('room_id')} "
+                f"bed={payload.get('bed_id')} x={x:.3f} y={y:.3f}")
 
     def _handle_goto(self, req):
         """goto 좌표 이동: arbiter 'goto'(nav) 점거 → NavExecutor 실행 → 종료 시 해제·보고."""
