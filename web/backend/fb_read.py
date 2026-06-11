@@ -10,6 +10,7 @@ RTDB 레이아웃: 최상위 robot3/robot6 노드에 ward_bridge가 구독하는
 """
 import os
 import re
+import time
 
 # NS는 common/robot.env(단일 소스)의 ROBOT_NAMESPACE를 따른다(PRIMARY_NS로 명시 override 가능).
 # 웹은 두 AMR(robot3·robot6)을 모두 보여주므로 SECONDARY는 PRIMARY의 나머지로 자동 도출.
@@ -332,6 +333,47 @@ def _phase_or_idle(v):
 def get_nurse_cart_phase(ns):
     """{ns}/nurse_cart/phase 읽기(로봇이 기록) → idle|arrived|tracking|done."""
     return _phase_or_idle(_init().reference(f"{_valid_ns(ns)}/nurse_cart/phase").get())
+
+
+# ── 환자 CS 챗봇 대화 로그 (cs_chat/<session>) ──────────────────────────────
+def _safe_sid(sid):
+    """RTDB 키 금지문자(.#$[]/) 제거 + 길이 제한. 빈 값은 'anon'."""
+    return re.sub(r"[^A-Za-z0-9_-]", "", str(sid or ""))[:64] or "anon"
+
+
+def append_cs_chat(session_id, lang, user_text, bot_text):
+    """CS 챗봇 한 턴(질문+답변)을 cs_chat/<sid>/messages 에 누적 기록(staff 뷰어용)."""
+    sid = _safe_sid(session_id)
+    now = int(time.time() * 1000)
+    base = _init().reference(f"cs_chat/{sid}")
+    if base.child("started_at").get() is None:
+        base.update({"started_at": now})
+    base.update({"lang": str(lang), "updated_at": now})
+    msgs = base.child("messages")
+    msgs.push({"role": "user", "text": str(user_text)[:2000], "ts": now})
+    msgs.push({"role": "bot", "text": str(bot_text)[:2000], "ts": now})
+    return True
+
+
+def read_cs_chat_sessions(limit=200):
+    """CS 챗봇 전체 세션 → 최신순 리스트(메시지 시간순 정렬 포함). staff+ 뷰어용."""
+    data = _init().reference("cs_chat").get() or {}
+    sessions = []
+    for sid, s in (data.items() if isinstance(data, dict) else []):
+        if not isinstance(s, dict):
+            continue
+        msgs = [m for m in (s.get("messages") or {}).values() if isinstance(m, dict)]
+        msgs.sort(key=lambda m: m.get("ts", 0))
+        sessions.append({
+            "id": sid,
+            "lang": s.get("lang", "ko"),
+            "started_at": s.get("started_at"),
+            "updated_at": s.get("updated_at"),
+            "count": len(msgs),
+            "messages": msgs,
+        })
+    sessions.sort(key=lambda x: x.get("updated_at") or 0, reverse=True)
+    return sessions[:limit]
 
 
 def camera_stream(ns):

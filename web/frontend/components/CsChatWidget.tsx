@@ -23,6 +23,7 @@ const PANEL_H = 540;
 const DRAG_THRESHOLD = 6; // 이 거리 미만 이동은 '클릭'으로 간주
 const POS_KEY = "cs:fabpos";
 const LANG_KEY = "cs:lang";
+const SID_KEY = "cs:sid";
 
 type Bubble = { role: "user" | "bot"; text: string };
 type Pos = { left: number; top: number };
@@ -44,11 +45,15 @@ export default function CsChatWidget() {
   const dragRef = useRef<{ dx: number; dy: number; moved: boolean } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const recRef = useRef<SpeechRecognitionLike | null>(null);
+  const sidRef = useRef<string>("");
   const t = UI_TEXT[lang];
 
-  /* 마운트 — 저장된 위치/언어 복원, 없으면 우측 하단 기본값 */
+  /* 마운트 — 저장된 위치/언어 복원, 없으면 우측 하단 기본값. 세션ID 발급(로그 키) */
   useEffect(() => {
     setMounted(true);
+    const savedSid = sessionStorage.getItem(SID_KEY);
+    sidRef.current = savedSid || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    if (!savedSid) sessionStorage.setItem(SID_KEY, sidRef.current);
     const savedLang = localStorage.getItem(LANG_KEY) as Lang | null;
     if (savedLang && LANGS.some((l) => l.code === savedLang)) setLang(savedLang);
     const saved = localStorage.getItem(POS_KEY);
@@ -108,7 +113,7 @@ export default function CsChatWidget() {
       { role: "user", content: q },
     ];
     try {
-      const reply = await askCsBot(history, lang);
+      const reply = await askCsBot(history, lang, sidRef.current);
       setBubbles((b) => [...b, { role: "bot", text: reply }]);
     } catch (err) {
       setBubbles((b) => [...b, { role: "bot", text: t.errPrefix + (err instanceof Error ? err.message : "error") }]);

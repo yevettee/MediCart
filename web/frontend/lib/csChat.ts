@@ -102,15 +102,31 @@ export const UI_TEXT: Record<Lang, Strings> = {
   },
 };
 
-/** 대화 이력 + 언어 → 백엔드(Ollama 프록시) → 봇 답변 텍스트. 실패 시 throw. */
-export async function askCsBot(messages: CsMsg[], lang: Lang): Promise<string> {
+/** 대화 이력 + 언어(+세션ID) → 백엔드(Ollama 프록시) → 봇 답변. 실패 시 throw.
+    session_id 는 백엔드가 cs_chat 로그를 세션별로 누적하는 키(staff 뷰어용). */
+export async function askCsBot(messages: CsMsg[], lang: Lang, sessionId: string): Promise<string> {
   const r = await fetch(`${API_BASE}/api/cs_chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, lang }),
+    body: JSON.stringify({ messages, lang, session_id: sessionId }),
   });
   if (!r.ok) throw new Error(`/api/cs_chat → ${r.status}`);
   const data = (await r.json()) as { ok: boolean; reply?: string };
   if (!data.ok || !data.reply) throw new Error("no_reply");
   return data.reply;
+}
+
+/* ── staff+ 대화 로그 뷰어 ── */
+export type CsLogMsg = { role: "user" | "bot"; text: string; ts: number };
+export type CsSession = {
+  id: string; lang: Lang; started_at?: number; updated_at?: number;
+  count: number; messages: CsLogMsg[];
+};
+
+/** CS 챗봇 전체 대화 세션(최신순) — staff+ 전용(/api/cs_logs). */
+export async function getCsLogs(): Promise<CsSession[]> {
+  const r = await fetch(`${API_BASE}/api/cs_logs`, { cache: "no-store", credentials: "include" });
+  if (!r.ok) throw new Error(`/api/cs_logs → ${r.status}`);
+  const data = (await r.json()) as { sessions?: CsSession[] };
+  return data.sessions ?? [];
 }

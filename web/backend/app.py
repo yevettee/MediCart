@@ -533,7 +533,19 @@ def cs_chat():
         return jsonify({"ok": False, "error": "llm_unavailable"}), 502
     if not reply:
         return jsonify({"ok": False, "error": "no_reply"}), 502
+
+    # 대화 로그 DB 적재 — 실패해도 답변엔 영향 없음. session_id 는 클라이언트 위젯이 생성.
+    try:
+        fb_read.append_cs_chat(body.get("session_id"), lang, history[-1]["content"], reply)
+    except Exception as e:  # noqa: BLE001 — 로깅 실패가 챗봇 응답을 막지 않도록
+        app.logger.warning("[cs_chat] 로그 적재 실패: %s", e)
     return jsonify({"ok": True, "reply": reply})
+
+
+@app.get("/api/cs_logs")
+def cs_logs():
+    """CS 챗봇 대화 로그 (staff+) — 최신순 세션 리스트(메시지 포함)."""
+    return jsonify({"sessions": fb_read.read_cs_chat_sessions()})
 
 
 # ── 로봇 명령 하달 (mission_pool, ROS 노드 통신 없음) ─────────────────────────

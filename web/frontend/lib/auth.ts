@@ -12,6 +12,7 @@ export function requiredRoleForRoute(path: string): Role {
   if (path === "/intake" || path.startsWith("/intake/")) return "patient";
   if (path === "/") return "staff"; // 홈(간호사 투약·순회 문진) — 의료진부터
   if (path.startsWith("/patients") || path.startsWith("/ocr")) return "staff";
+  if (path.startsWith("/cs-logs")) return "staff"; // CS 챗봇 상담 로그 — 의료진+
   return "admin"; // "/console", 그 외 보호 라우트
 }
 
@@ -25,6 +26,7 @@ export const NAV_ROLES: Record<string, Role> = {
   "/patients": "staff",
   "/intake": "patient",
   "/ocr": "staff",
+  "/cs-logs": "staff",
 };
 
 export function landingFor(role: Role): string {

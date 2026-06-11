@@ -11,6 +11,7 @@ const NAV = [
   { href: "/patients", label: "환자 정보", sub: "회진 보조", icon: PatientIcon },
   { href: "/intake", label: "문진표", sub: "작성·저장", icon: FormIcon },
   { href: "/ocr", label: "처치실", sub: "투약 준비·검증", icon: FormIcon },
+  { href: "/cs-logs", label: "CS 상담 로그", sub: "챗봇 대화 기록", icon: ChatIcon },
   { href: "/qr", label: "QR 스캔", sub: "환자 문진표 호출", icon: QrIcon },
 ];
 
@@ -140,5 +141,11 @@ function QrIcon() {
     <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
     <rect x="3" y="14" width="7" height="7" rx="1" />
     <path d="M14 14h1M19 14h1M14 19h3M19 19h1M14 17h1M17 17v2" />
+  </svg>);
+}
+function ChatIcon() {
+  return (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.3-.6L3 21l1.3-4a8.4 8.4 0 1 1 16.7-5.5Z" />
+    <path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01" />
   </svg>);
 }

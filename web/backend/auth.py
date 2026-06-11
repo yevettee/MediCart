@@ -13,7 +13,7 @@ _OPEN = {"/api/health", "/api/login", "/api/me", "/api/logout", "/api/intake",
 # 키오스크 디스플레이 현재 환자(읽기/표시) — 비로그인 허용. (display/expected 는 staff)
 _PATIENT_PREFIXES = ("/api/display/current",)
 _STAFF_PREFIXES = ("/api/patients", "/api/ocr", "/api/patrol", "/api/nurse_cart",
-                   "/api/identify", "/api/display/expected")
+                   "/api/identify", "/api/display/expected", "/api/cs_logs")
 
 
 def _eq(a, b):
