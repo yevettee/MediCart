@@ -25,6 +25,7 @@ export default function OcrPage() {
   /* 환자/주사 목록 */
   const [patients, setPatients] = useState<Patient[]>([]);
   const [pid, setPid] = useState("");
+  const [lockedPid, setLockedPid] = useState("");   // 약품 검증 통과한 투약 대상(잠금)
   const [injections, setInjections] = useState<InjEntry[]>([]);
   const [injId, setInjId] = useState("");
 
@@ -255,6 +256,7 @@ export default function OcrPage() {
     try {
       const res = await verifyInjection(pid, injId, text, medicineName);
       setResult(res);
+      if (res.match) setLockedPid(pid);   // 약품 검증 통과 → 투약 대상 잠금
       // 로컬 목록 상태 즉시 반영
       setInjections((prev) =>
         prev.map((i) => i.id === injId ? { ...i, status: res.status as Injection["status"] } : i)
@@ -296,6 +298,7 @@ export default function OcrPage() {
   /* 회진 종료 → 로봇: 추종 중지 후 홈 복귀·도킹 */
   async function handleRoundDone() {
     setRoundSending(true); setDoneMsg("");
+    setLockedPid("");   // 회진 종료 → 다음 투약 런 위해 잠금 해제
     try {
       await nurseCartRoundDone();
       setDoneMsg("완료/복귀 전송됨 — 로봇이 홈으로 복귀해 도킹합니다.");
@@ -327,6 +330,11 @@ export default function OcrPage() {
             <CartIcon /> 간호사 카트 (시나리오 B)
           </h2>
           <PhaseBadge phase={phase} />
+          {lockedPid && (
+            <span className="pill bg-teal-soft text-teal-600 text-xs font-semibold">
+              투약 대상: {patients.find((p) => p.id === lockedPid)?.성명 ?? lockedPid} (잠금)
+            </span>
+          )}
           <div className="ml-auto flex gap-2">
             <button onClick={handleDone} disabled={doneSending}
               className="rounded-xl bg-teal text-white px-4 py-2 text-sm font-semibold hover:bg-teal-600 disabled:opacity-50 transition-colors flex items-center gap-2">
@@ -523,7 +531,8 @@ export default function OcrPage() {
               <select
                 value={pid}
                 onChange={(e) => setPid(e.target.value)}
-                className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-teal">
+                disabled={!!lockedPid}
+                className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-teal disabled:opacity-60 disabled:cursor-not-allowed">
                 <option value="">-- 환자를 선택하세요 --</option>
                 {patients.map((p) => (
                   <option key={p.id} value={p.id}>
