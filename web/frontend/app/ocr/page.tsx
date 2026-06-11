@@ -137,7 +137,7 @@ export default function OcrPage() {
         setScanning(false);
         scanningRef.current = false;
       }
-    }, "image/png");
+    }, "image/jpeg", 0.9);
   }, [camOn]);
 
   /* QR 환자 확인 스캔 함수 */

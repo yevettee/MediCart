@@ -131,7 +131,7 @@ export const getMissions = (ns: string) => getJSON<{ missions: Mission[] }>(`/ap
 
 export async function ocr(blob: Blob): Promise<{ text: string }> {
   const fd = new FormData();
-  fd.append("image", blob, "capture.png");
+  fd.append("image", blob, "capture.jpg");
   const r = await fetch(`${API_BASE}/api/ocr`, { method: "POST", credentials: "include", body: fd });
   if (!r.ok) throw new Error(`/api/ocr → ${r.status}`);
   return r.json();
