@@ -591,7 +591,7 @@ def targets_seed():
         "t101_1": {"label": "101호 1번", "x": -4.597506226772473, "y": -0.5538369178713166, "yaw": 2.8159358393246},
         "t101_2": {"label": "101호 2번", "x": -4.300127139174645, "y": -1.3088913768325918, "yaw": -2.8173998824860047},
         "t102":   {"label": "102호 호출", "x": -4.164764521333983, "y": -3.353771822329527, "yaw": -2.9315422237255655},
-        "t102_1": {"label": "102호 1번", "x": -4.3, "y": -3.39, "yaw": 0},
+        "t102_1": {"label": "102호 1번", "x": -4.164764521333983, "y": -3.353771822329527, "yaw": -2.9315422237255655},
         "pharmacy": {"label": "약품실", "x": -0.302782, "y": -3.3757, "yaw": -0.0545105},
         "dock":   {"label": "Docking Station", "x": -0.354229, "y": -0.118972,
                    "yaw": -0.0042011, "dock_after": True},
@@ -606,11 +606,14 @@ def get_targets():
 
 
 def seed_targets():
-    """`targets` 가 비어있으면 시드(멱등). 반환: 시드했으면 True."""
+    """누락된 target 키를 채워넣는다(upsert). 반환: 변경이 있으면 True."""
     ref = _init().reference("targets")
-    if ref.get():
+    existing = ref.get() or {}
+    seed = targets_seed()
+    missing = {k: v for k, v in seed.items() if k not in existing}
+    if not missing:
         return False
-    ref.set(targets_seed())
+    ref.update(missing)
     return True
 
 

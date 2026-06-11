@@ -137,14 +137,16 @@ class PatrolIntakeSequencer:
             if done:
                 prev_ward = _ward(self._stops[self._idx].get('room'))
                 self._idx += 1
-                next_ward = (_ward(self._stops[self._idx].get('room'))
-                             if self._idx < len(self._stops) else None)
-                # 병실(호실)이 끝났으면(다음이 다른 호실이거나 마지막) 중간 경유지 경유,
-                # 같은 호실의 다음 침상이면 바로 이동.
-                if prev_ward != next_ward:
-                    self._enter_goto_transit()
+                if self._idx >= len(self._stops):
+                    # 마지막 병상 완료 — 경유지 없이 바로 홈 복귀
+                    self._enter_goto_home()
                 else:
-                    self._enter_goto_stop()
+                    next_ward = _ward(self._stops[self._idx].get('room'))
+                    # 호실이 바뀌면 경유지 경유, 같은 호실의 다음 침상이면 바로 이동
+                    if prev_ward != next_ward:
+                        self._enter_goto_transit()
+                    else:
+                        self._enter_goto_stop()
 
         elif self._state == GOTO_TRANSIT:
             res = self._take_result()
