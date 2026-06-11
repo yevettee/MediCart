@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getNurseCartPhase, nurseCartRoundDone, type NurseCartPhase } from "@/lib/api";
 
 // 회진(시나리오 B) 단계 인식 풀스크린 오버레이.
@@ -21,7 +22,7 @@ const STEP_LABELS: { key: NurseCartPhase; short: string }[] = [
 
 const PHASE_TEXT: Record<NurseCartPhase, string> = {
   idle: "약품실로 이동 중…",
-  arrived: "약품실 도착 — OCR을 진행하세요",
+  arrived: "약품실 도착 — OCR 화면으로 이동합니다…",
   tracking: "간호사 추종 중",
   bed_arrived: "병상 도착 — QR 확인 대기",
   wait_qr: "병상 도착 — QR 확인 대기",
@@ -31,7 +32,7 @@ const PHASE_TEXT: Record<NurseCartPhase, string> = {
 
 const PHASE_SUB: Record<NurseCartPhase, string> = {
   idle: "로봇이 약품실로 이동합니다.",
-  arrived: "약품 OCR 페이지(/ocr)에서 스캔 후 'OCR 완료'를 누르면 로봇이 입구로 이동해 추종을 시작합니다.",
+  arrived: "OCR 화면이 자동으로 열립니다. 환자를 선택하고 약품을 스캔한 뒤 'OCR 완료'를 누르면 로봇이 입구로 이동해 추종을 시작합니다.",
   tracking: "간호사를 따라 병상 앞까지 이동합니다. 지정된 침대 zone에 들어오면 추종이 자동으로 멈춥니다.",
   bed_arrived: "추종이 해제되었습니다. 약 포장 QR을 확인한 뒤 '완료/복귀'를 누르면 로봇이 홈으로 복귀합니다.",
   wait_qr: "추종이 해제되었습니다. 약 포장 QR을 확인한 뒤 '완료/복귀'를 누르면 로봇이 홈으로 복귀합니다.",
@@ -40,6 +41,7 @@ const PHASE_SUB: Record<NurseCartPhase, string> = {
 };
 
 export default function RoundOverlay({ active, ns, onExit }: Props) {
+  const router = useRouter();
   const [phase, setPhase] = useState<NurseCartPhase>("idle");
   const [ending, setEnding] = useState(false);
 
@@ -53,6 +55,11 @@ export default function RoundOverlay({ active, ns, onExit }: Props) {
     const t = setInterval(tick, 2000);
     return () => { alive = false; clearInterval(t); };
   }, [active, ns]);
+
+  // 약품실 도착 → OCR 화면(/ocr) 자동 오픈. 텍스트 안내 대신 실제 OCR(환자 선택+스캔)로 바로 진입.
+  useEffect(() => {
+    if (active && phase === "arrived") router.push("/ocr");
+  }, [active, phase, router]);
 
   // 복귀 완료 → 잠시 후 닫기
   useEffect(() => {
