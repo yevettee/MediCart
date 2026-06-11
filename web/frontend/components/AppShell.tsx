@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
+import CsChatWidget from "./CsChatWidget";
 import { getMe } from "@/lib/api";
 import type { Role } from "@/lib/auth";
 
@@ -65,6 +66,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         <main className="flex-1 min-w-0">{children}</main>
       </div>
+
+      {/* 환자 CS 챗봇 — 환자(비로그인 포함) 세션에서만 우측 하단 위젯 노출 */}
+      {role === "patient" && <CsChatWidget />}
     </div>
   );
 }

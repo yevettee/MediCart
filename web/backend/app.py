@@ -9,6 +9,8 @@ import os
 import re
 import sys
 
+import requests
+
 import yaml
 from flask import Flask, Response, jsonify, request, send_file
 from flask_cors import CORS
@@ -431,6 +433,107 @@ def nurse_cart_round_done():
 def nurse_cart_phase():
     """로봇 현재 단계 (공개) — query ?ns=. idle | arrived | tracking | done."""
     return jsonify({"phase": fb_read.get_nurse_cart_phase(_req_ns())})
+
+
+# ── 환자 CS 챗봇 (Ollama 프록시) ──────────────────────────────────────────────
+# 브라우저는 HTTPS 터널 뒤라 http://host:11434 직접 호출 불가(mixed-content) →
+# 백엔드가 Ollama 로 중계한다. 시스템 프롬프트(병원 안내 페르소나 "메디")는 서버가
+# 언어별로 보유 — 클라이언트는 대화 이력(user/assistant)만 보낸다(프롬프트 변조 방지).
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/chat")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:4b")
+
+_CS_PERSONA = {
+    "ko": """당신은 병원 안내 로봇 "메디"입니다.
+환자를 따뜻하고 친절하게 안내하는 것이 역할입니다.
+답변은 간결하고 명확하게 2~3문장 이내로 합니다.
+모르는 내용은 "안내데스크에 문의해주세요"라고 답합니다.
+
+[병원 안내 정보]
+- 병원명: MedQR 종합병원
+- 접수처: 1층 입구에서 직진 20m 정면
+- 내과: 2층 201호 / 정형외과: 3층 301호 / 소아과: 2층 205호
+- 약국: 1층 출구 옆
+- 화장실: 각 층 엘리베이터 옆
+- 운영시간: 평일 09:00~18:00, 토요일 09:00~13:00, 일·공휴일 휴진
+- 주차장: 지하 1~2층 (2시간 무료)
+- 응급실: 1층 우측, 24시간 운영""",
+    "en": """You are "Medi," the hospital information robot.
+Your role is to guide patients warmly and kindly.
+Keep answers brief and clear, within 2-3 sentences.
+If you don't know something, say "Please ask at the information desk."
+
+[Hospital Information]
+- Hospital: MedQR General Hospital
+- Reception: 20m straight ahead from the 1st floor entrance
+- Internal Medicine: 2F Room 201 / Orthopedics: 3F Room 301 / Pediatrics: 2F Room 205
+- Pharmacy: Next to the 1st floor exit
+- Restrooms: Next to the elevator on each floor
+- Hours: Weekdays 09:00-18:00, Saturday 09:00-13:00, Closed Sundays & holidays
+- Parking: B1-B2 (2 hours free)
+- Emergency: 1st floor right side, open 24 hours""",
+    "zh": """您是医院向导机器人"Medi"。
+您的职责是温暖、友好地为患者提供引导。
+回答请简洁明了，控制在2~3句以内。
+不知道的内容请回答"请在服务台询问"。
+
+[医院信息]
+- 医院名：MedQR综合医院
+- 挂号处：从1楼入口直行20米
+- 内科：2楼201室 / 整形外科：3楼301室 / 儿科：2楼205室
+- 药房：1楼出口旁边
+- 洗手间：每层电梯旁边
+- 营业时间：工作日09:00~18:00，周六09:00~13:00，周日及节假日休息
+- 停车场：地下1~2层（免费2小时）
+- 急诊室：1楼右侧，24小时运营""",
+    "ja": """あなたは病院案内ロボット「メディ」です。
+患者様を温かく親切にご案内するのが役割です。
+回答は簡潔・明瞭に2〜3文以内でお願いします。
+わからないことは「インフォメーションデスクにお問い合わせください」とお答えします。
+
+[病院案内情報]
+- 病院名：MedQR総合病院
+- 受付：1階入口から直進20m
+- 内科：2階201号室 / 整形外科：3階301号室 / 小児科：2階205号室
+- 薬局：1階出口横
+- トイレ：各階エレベーター横
+- 営業時間：平日09:00~18:00、土曜09:00~13:00、日・祝休診
+- 駐車場：地下1〜2階（2時間無料）
+- 救急室：1階右側、24時間営業""",
+}
+
+
+@app.post("/api/cs_chat")
+def cs_chat():
+    """환자 CS 챗봇 (공개) — body {messages:[{role,content}], lang}. Ollama 중계 → {reply}."""
+    body = request.get_json(force=True, silent=True) or {}
+    lang = str(body.get("lang") or "ko")
+    persona = _CS_PERSONA.get(lang, _CS_PERSONA["ko"])
+
+    # 클라이언트 이력에서 user/assistant 만 신뢰(최근 20개) — system 은 서버 페르소나 고정.
+    raw = body.get("messages") or []
+    history = [
+        {"role": m["role"], "content": str(m["content"])[:2000]}
+        for m in raw
+        if isinstance(m, dict) and m.get("role") in ("user", "assistant") and m.get("content")
+    ][-20:]
+    if not history:
+        return jsonify({"ok": False, "error": "empty"}), 400
+
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": [{"role": "system", "content": persona}, *history],
+        "stream": False,
+    }
+    try:
+        r = requests.post(OLLAMA_URL, json=payload, timeout=60)
+        r.raise_for_status()
+        reply = (r.json().get("message") or {}).get("content", "").strip()
+    except requests.RequestException as e:
+        app.logger.warning("[cs_chat] Ollama 호출 실패: %s", e)
+        return jsonify({"ok": False, "error": "llm_unavailable"}), 502
+    if not reply:
+        return jsonify({"ok": False, "error": "no_reply"}), 502
+    return jsonify({"ok": True, "reply": reply})
 
 
 # ── 로봇 명령 하달 (mission_pool, ROS 노드 통신 없음) ─────────────────────────
