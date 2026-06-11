@@ -16,6 +16,7 @@ type InjEntry = { id: string } & Injection;
 type VerifyResult = { match: boolean; status: string; reason: string } | null;
 
 type QrResult =
+  | { type: "no_target" }
   | { type: "complete";        patientName: string; injCount: number }
   | { type: "blocked_meds";    patientName: string; unready: { name: string; status: string }[] }
   | { type: "blocked_patient"; scannedPid: string;  selectedName: string }
@@ -196,9 +197,14 @@ export default function OcrPage() {
     setQrRaw(raw);
     if (!PID_RE.test(raw)) return;
 
-    const selName = patients.find((p) => p.id === pid)?.성명 ?? pid;
-    const decision = decideQr(raw, pid, injections);
+    const target = lockedPid;   // 약품실에서 잠근 투약 대상과만 비교
+    const selName = patients.find((p) => p.id === target)?.성명 ?? target;
+    const decision = decideQr(raw, target, injections);
 
+    if (decision.kind === "no_target") {
+      setQrResult({ type: "no_target" });
+      return;
+    }
     if (decision.kind === "blocked_patient") {
       setQrResult({ type: "blocked_patient", scannedPid: decision.scannedPid, selectedName: selName });
       return;
@@ -214,7 +220,7 @@ export default function OcrPage() {
     qrConfirmingRef.current = true;
     setQrConfirming(true);
     try {
-      await Promise.all(injections.map((i) => confirmInjection(pid, i.id)));
+      await Promise.all(injections.map((i) => confirmInjection(target, i.id)));
       setInjections((prev) => prev.map((i) => ({ ...i, status: "confirmed" as Injection["status"] })));
       setQrResult({ type: "complete", patientName: selName, injCount: decision.injCount });
       setScanErr("");
@@ -224,7 +230,7 @@ export default function OcrPage() {
       setQrConfirming(false);
       qrConfirmingRef.current = false;
     }
-  }, [camOn, pid, injections, patients]);
+  }, [camOn, lockedPid, injections, patients]);
 
   /* QR 모드 인터벌(300ms) */
   useEffect(() => {
@@ -282,6 +288,12 @@ export default function OcrPage() {
     return () => { alive = false; clearInterval(t); };
   }, []);
 
+  /* 병상 도착(wait_qr/bed_arrived) → 자동 QR 모드, idle 복귀 → 잠금 해제 */
+  useEffect(() => {
+    if (phase === "wait_qr" || phase === "bed_arrived") setOcrMode("qr");
+    if (phase === "idle") setLockedPid("");
+  }, [phase]);
+
   /* OCR 완료 → 로봇: 약품실 입구 이동 후 간호사 추종 시작 */
   async function handleDone() {
     setDoneSending(true); setDoneMsg("");
@@ -300,7 +312,7 @@ export default function OcrPage() {
     setRoundSending(true); setDoneMsg("");
     setLockedPid("");   // 회진 종료 → 다음 투약 런 위해 잠금 해제
     try {
-      await nurseCartRoundDone();
+      await nurseCartRoundDone(NURSE_CART_NS);
       setDoneMsg("완료/복귀 전송됨 — 로봇이 홈으로 복귀해 도킹합니다.");
     } catch (e) {
       setDoneMsg("전송 실패: " + String(e));
@@ -444,6 +456,16 @@ export default function OcrPage() {
                   </div>
                 )}
 
+                {/* Case 0 — 약품 검증 전(투약 대상 미잠금) */}
+                {qrResult?.type === "no_target" && (
+                  <div className="rounded-2xl p-4 border bg-amber-soft border-amber/30">
+                    <p className="font-bold text-amber text-base mb-1">약품 OCR 검증을 먼저 완료하세요</p>
+                    <p className="text-ink-2 text-sm leading-relaxed">
+                      투약 대상이 아직 잠기지 않았습니다. 약품실에서 환자·약품 OCR 검증을 통과해야 병상 QR을 확인할 수 있습니다.
+                    </p>
+                  </div>
+                )}
+
                 {/* Case 2 — 처방 불가 (미완료 약품) */}
                 {qrResult?.type === "blocked_meds" && (
                   <div className="rounded-2xl p-4 border bg-red-soft border-red/30">
@@ -474,14 +496,14 @@ export default function OcrPage() {
                   <div className="rounded-2xl p-4 border bg-red-soft border-red/30">
                     <div className="flex items-center gap-3 mb-2">
                       <MismatchIcon />
-                      <p className="font-bold text-red text-base">처방 불가 — 환자 정보 불일치</p>
+                      <p className="font-bold text-red text-base">투약 대상 환자가 아닙니다</p>
                     </div>
                     <p className="text-ink-2 text-sm leading-relaxed">
-                      스캔된 QR이 선택된 환자와 다릅니다. 올바른 환자의 QR인지 확인하세요.
+                      스캔된 QR이 투약 대상 환자와 다릅니다. 투약 대상 환자의 QR인지 확인하세요.
                     </p>
                     <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-lg bg-surface px-3 py-2 border border-line">
-                        <p className="text-ink-3 mb-0.5">선택된 환자</p>
+                        <p className="text-ink-3 mb-0.5">투약 대상</p>
                         <p className="font-semibold text-ink">{qrResult.selectedName}</p>
                       </div>
                       <div className="rounded-lg bg-surface px-3 py-2 border border-red/30">
