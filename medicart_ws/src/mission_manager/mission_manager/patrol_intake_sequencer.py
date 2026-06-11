@@ -21,13 +21,22 @@ import threading
 import time
 
 # 시퀀스 상태
-IDLE, GOTO_STOP, WAIT_INTAKE, GOTO_HOME, DONE, FAILED = (
-    'idle', 'goto_stop', 'wait_intake', 'goto_home', 'done', 'failed')
+IDLE, GOTO_STOP, GOTO_TRANSIT, WAIT_INTAKE, GOTO_HOME, DONE, FAILED = (
+    'idle', 'goto_stop', 'goto_transit', 'wait_intake', 'goto_home', 'done', 'failed')
 
 PATROL_INTAKE_ACTION = 'patrol_intake_mission'
 
 # 홈(도킹 스테이션) 위치 — patrol_mode_node DEFAULT_TARGETS 'Docking Station' 동일
 _DEFAULT_HOME = {'x': -0.41441398221214687, 'y': -1.1834801683713334, 'yaw': 0.29826762982476646, 'dock_after': True}
+
+# 병실(호실) 전환 시 경유하는 중간 웨이포인트(복도 분기) — 병실 1개 완료마다 여기로 이동 후 다음 목적지.
+# yaw 는 쿼터니언(z=-0.6384945, w=0.7696264) → 2*atan2(z,w).
+_TRANSIT_WAYPOINT = {'x': -2.7279719992833167, 'y': -1.2078616913667672, 'yaw': -1.3850810814205103}
+
+
+def _ward(room):
+    """병실(호실) 번호 — '101-A' → '101'. None/빈값은 ''."""
+    return (room or '').split('-')[0]
 
 
 def _now_ms():
@@ -126,11 +135,28 @@ class PatrolIntakeSequencer:
             with self._lock:
                 done, self._intake_done = self._intake_done, False
             if done:
+                prev_ward = _ward(self._stops[self._idx].get('room'))
                 self._idx += 1
-                if self._idx < len(self._stops):
-                    self._enter_goto_stop()
+                next_ward = (_ward(self._stops[self._idx].get('room'))
+                             if self._idx < len(self._stops) else None)
+                # 병실(호실)이 끝났으면(다음이 다른 호실이거나 마지막) 중간 경유지 경유,
+                # 같은 호실의 다음 침상이면 바로 이동.
+                if prev_ward != next_ward:
+                    self._enter_goto_transit()
                 else:
-                    self._enter_goto_home()
+                    self._enter_goto_stop()
+
+        elif self._state == GOTO_TRANSIT:
+            res = self._take_result()
+            if res is None:
+                return
+            status, detail = res
+            if status != 'done':
+                self._fail(f'중간 경유지 이동 실패: {detail}')
+            elif self._idx < len(self._stops):
+                self._enter_goto_stop()      # 경유 후 다음 병실 첫 침상
+            else:
+                self._enter_goto_home()      # 마지막 병실 후 경유 → 홈 복귀·도킹
 
         elif self._state == GOTO_HOME:
             res = self._take_result()
@@ -155,6 +181,27 @@ class PatrolIntakeSequencer:
         if self._nav.active:
             self._nav.cancel()
         params = {'x': stop['x'], 'y': stop['y'], 'yaw': stop['yaw'], 'dock_after': False}
+        self._arbiter.apply('start', 'goto', params)
+
+        def _on_done(status, detail):
+            self._arbiter.apply('stop', 'goto')
+            self._set_result((status, detail))
+
+        self._nav.start(params, _on_done)
+
+    def _enter_goto_transit(self):
+        """병실(호실) 완료 → 다음 목적지(다음 병실/홈) 전에 중간 경유 웨이포인트로 이동."""
+        wp = _TRANSIT_WAYPOINT
+        self._state = GOTO_TRANSIT
+        self._set_result(None)
+        self._emit('running', '병실 이동 — 중간 경유지로 이동 중')
+        nxt = '홈' if self._idx >= len(self._stops) else self._stops[self._idx].get('room')
+        self._log.info(
+            f'[patrol_intake] → GOTO_TRANSIT id={self._id} '
+            f'({wp["x"]:.3f}, {wp["y"]:.3f}) 경유 후 {nxt}')
+        if self._nav.active:
+            self._nav.cancel()
+        params = {'x': wp['x'], 'y': wp['y'], 'yaw': wp['yaw'], 'dock_after': False}
         self._arbiter.apply('start', 'goto', params)
 
         def _on_done(status, detail):
