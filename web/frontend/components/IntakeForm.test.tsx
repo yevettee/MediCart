@@ -9,6 +9,8 @@ import IntakeForm from "./IntakeForm";
 
 vi.mock("@/lib/api", () => ({
   addVisit: vi.fn(),
+  // 프리필(a570011): IntakeForm 마운트 시 getPatient(pid) 호출 → null 이면 기본 빈 폼 유지.
+  getPatient: vi.fn().mockResolvedValue(null),
 }));
 
 import { addVisit } from "@/lib/api";
